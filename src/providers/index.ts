@@ -14,7 +14,11 @@ export function getModel(provider: ProviderId, modelId: string) {
         baseURL: process.env.LMSTUDIO_BASE_URL ?? 'http://localhost:1234/v1',
         apiKey: 'lm-studio',
       });
-      return lmstudio(modelId);
+      // `.chat()` = /v1/chat/completions. The default factory would be openai.responses
+      // (/v1/responses), which LM Studio answers with a 500 as soon as a tool result is
+      // sent back ("Invalid type for 'input'" / "Failed to parse tool call"), breaking
+      // every tool-using workflow. Chat Completions round-trips tools correctly.
+      return lmstudio.chat(modelId);
     }
     case 'openai': requireEnv('OPENAI_API_KEY'); return openai(modelId);
     case 'anthropic': requireEnv('ANTHROPIC_API_KEY'); return anthropic(modelId);

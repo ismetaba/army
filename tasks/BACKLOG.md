@@ -22,7 +22,7 @@ Paste this (fill `T##`):
 
 ## Phase 1 — Provider layer
 - [x] [T03](T03.md) — Provider registry (lmstudio/openai/anthropic/claude-cli) + config resolution
-- [ ] [T04](T04.md) — `aw ping` smoke command per provider
+- [x] [T04](T04.md) — `aw ping` smoke command per provider
 
 ## Phase 2 — Tool layer
 - [x] [T05](T05.md) — Core tools (fs/bash/git/grep/http) + permission profiles
@@ -32,7 +32,7 @@ Paste this (fill `T##`):
 - [x] [T07](T07.md) — ui-designer / qa-tester / code-reviewer definitions + loader
 
 ## Phase 4 — Workflows (CLI)
-- [ ] [T08](T08.md) — `aw review` (verdict + severity-sorted findings, headless-safe)
+- [x] [T08](T08.md) — `aw review` (verdict + severity-sorted findings, headless-safe)
 - [ ] [T09](T09.md) — `aw test-feature` (plan → execute → report file)
 - [ ] [T10](T10.md) — `aw design-loop` (implement → browser-verify → screenshots → stop for feedback)
 
