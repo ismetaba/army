@@ -11,6 +11,10 @@ Paste this (fill `T##`):
 > read `tasks/T##.md`. Execute ONLY that task's Steps, in order. Do not touch files outside
 > the task's scope. When done, run every command in the Acceptance section and show the
 > output. If all pass, mark the task's checkbox in `tasks/BACKLOG.md`. Never `git push`.
+> If a Step conflicts with reality (an API/signature changed, a command fails), make the
+> smallest fix that preserves the task's Goal and record the deviation under a
+> `## Deviations` heading at the bottom of that task file — do NOT redesign or change
+> SPEC.md; design changes go back to the architect.
 
 ## Phase 0 — Bootstrap
 - [ ] [T01](T01.md) — Scaffold TypeScript project (deps, tsconfig, CLI stub)
