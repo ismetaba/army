@@ -33,8 +33,8 @@ Paste this (fill `T##`):
 
 ## Phase 4 — Workflows (CLI)
 - [x] [T08](T08.md) — `aw review` (verdict + severity-sorted findings, headless-safe)
-- [ ] [T09](T09.md) — `aw test-feature` (plan → execute → report file)
-- [ ] [T10](T10.md) — `aw design-loop` (implement → browser-verify → screenshots → stop for feedback)
+- [x] [T09](T09.md) — `aw test-feature` (plan → execute → report file)
+- [x] [T10](T10.md) — `aw design-loop` (implement → browser-verify → screenshots → stop for feedback)
 
 ## Phase 5 — Claude Code native layer
 - [ ] [T11](T11.md) — `.claude/` commands + subagents generated from agents/*.md
