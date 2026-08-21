@@ -1,0 +1,266 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { tool } from 'ai';
+import { z } from 'zod';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import type { AwConfig } from '../../shared/schemas';
+import { slugify } from '../util';
+
+/** Which browser context a tool call targets (SPEC § viewports). */
+export const BrowserViewport = z.enum(['mobile', 'desktop']);
+export type BrowserViewport = z.infer<typeof BrowserViewport>;
+
+type Viewports = AwConfig['viewports'];
+
+export interface BrowserToolsOptions {
+  /** Directory screenshots are written into; created on demand. */
+  screenshotDir: string;
+  /** Pixel sizes for the `mobile` / `desktop` contexts. */
+  viewports: Viewports;
+}
+
+/** Every tool returns this instead of throwing (SPEC: tools never throw). */
+export type ToolError = { error: string };
+
+export type GotoResult = { url: string; title: string } | ToolError;
+export type ScreenshotResult = { path: string } | ToolError;
+export type ClickResult = { ok: true; selector: string } | ToolError;
+export type FillResult = { ok: true; selector: string } | ToolError;
+export type ConsoleErrorsResult = { count: number; errors: string[] };
+
+const ACTION_TIMEOUT_MS = 30_000;
+const NAV_TIMEOUT_MS = 30_000;
+/** Hard cap so a noisy page cannot grow the buffer without bound. */
+const MAX_BUFFERED_ERRORS = 500;
+const MAX_MESSAGE_CHARS = 2_000;
+
+// ---------------------------------------------------------------------------
+// Module-level lazy singletons: one browser, one context+page per viewport name.
+// ---------------------------------------------------------------------------
+
+interface Session {
+  context: BrowserContext;
+  page: Page;
+  /** `error`-level console messages + pageerrors collected since the last read. */
+  errors: string[];
+}
+
+let browserPromise: Promise<Browser> | null = null;
+const sessions = new Map<BrowserViewport, Promise<Session>>();
+
+function getBrowser(): Promise<Browser> {
+  if (!browserPromise) {
+    browserPromise = chromium.launch({ headless: true }).catch((err: unknown) => {
+      browserPromise = null; // allow a later retry
+      throw err;
+    });
+  }
+  return browserPromise;
+}
+
+function truncate(s: string, max = MAX_MESSAGE_CHARS): string {
+  return s.length > max ? `${s.slice(0, max)}…[truncated]` : s;
+}
+
+function push(session: Session, message: string): void {
+  if (session.errors.length >= MAX_BUFFERED_ERRORS) return;
+  session.errors.push(truncate(message));
+}
+
+async function createSession(name: BrowserViewport, viewports: Viewports): Promise<Session> {
+  const browser = await getBrowser();
+  const { width, height } = viewports[name];
+  // deviceScaleFactor 1 keeps PNG pixel width identical to the CSS viewport width.
+  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+  context.setDefaultTimeout(ACTION_TIMEOUT_MS);
+  context.setDefaultNavigationTimeout(NAV_TIMEOUT_MS);
+  const page = await context.newPage();
+  const session: Session = { context, page, errors: [] };
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') push(session, `[console] ${msg.text()}`);
+  });
+  page.on('pageerror', (err) => {
+    push(session, `[pageerror] ${err.message}`);
+  });
+  return session;
+}
+
+function getSession(name: BrowserViewport, viewports: Viewports): Promise<Session> {
+  let pending = sessions.get(name);
+  if (!pending) {
+    pending = createSession(name, viewports).catch((err: unknown) => {
+      sessions.delete(name); // failed creation must not be cached
+      throw err;
+    });
+    sessions.set(name, pending);
+  }
+  return pending;
+}
+
+/** Close every context and the browser itself. Safe to call more than once. */
+export async function closeBrowser(): Promise<void> {
+  const pending = [...sessions.values()];
+  sessions.clear();
+  for (const p of pending) {
+    try {
+      const session = await p;
+      await session.context.close();
+    } catch {
+      // a context that never opened, or already closed, needs no cleanup
+    }
+  }
+  const browser = browserPromise;
+  browserPromise = null;
+  if (browser) {
+    try {
+      await (await browser).close();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function errorOf(err: unknown): ToolError {
+  const message = err instanceof Error ? err.message : String(err);
+  return { error: truncate(message.split('\n').slice(0, 6).join('\n')) };
+}
+
+/**
+ * `<screenshotDir>/<slugified screen>-<viewport>.png`.
+ * A `screen` containing `/` becomes nested directories, each segment slugified, so a caller
+ * can never escape `screenshotDir`.
+ */
+export function screenshotPath(
+  screenshotDir: string,
+  screen: string,
+  viewport: BrowserViewport,
+): string {
+  const segments = screen.split('/').map(slugify).filter(Boolean);
+  if (segments.length === 0) segments.push('screen');
+  const file = `${segments.pop()}-${slugify(viewport)}.png`;
+  return path.join(screenshotDir, ...segments, file);
+}
+
+/**
+ * The bodies behind the tools, as plainly-typed async functions.
+ * `makeBrowserTools` wraps these; scripts (and later workflows) can call them directly
+ * without synthesising AI SDK tool-execution options.
+ */
+export function makeBrowserActions(opts: BrowserToolsOptions) {
+  const { screenshotDir, viewports } = opts;
+
+  return {
+    async goto(input: { url: string; viewport: BrowserViewport }): Promise<GotoResult> {
+      try {
+        const { page } = await getSession(input.viewport, viewports);
+        await page.goto(input.url, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT_MS });
+        return { url: page.url(), title: await page.title() };
+      } catch (err) {
+        return errorOf(err);
+      }
+    },
+
+    async screenshot(input: {
+      screen: string;
+      viewport: BrowserViewport;
+    }): Promise<ScreenshotResult> {
+      try {
+        const { page } = await getSession(input.viewport, viewports);
+        const file = screenshotPath(screenshotDir, input.screen, input.viewport);
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await page.screenshot({ path: file, fullPage: true });
+        return { path: file };
+      } catch (err) {
+        return errorOf(err);
+      }
+    },
+
+    async click(input: { selector: string; viewport: BrowserViewport }): Promise<ClickResult> {
+      try {
+        const { page } = await getSession(input.viewport, viewports);
+        await page.click(input.selector, { timeout: ACTION_TIMEOUT_MS });
+        return { ok: true, selector: input.selector };
+      } catch (err) {
+        return errorOf(err);
+      }
+    },
+
+    async fill(input: {
+      selector: string;
+      value: string;
+      viewport: BrowserViewport;
+    }): Promise<FillResult> {
+      try {
+        const { page } = await getSession(input.viewport, viewports);
+        await page.fill(input.selector, input.value, { timeout: ACTION_TIMEOUT_MS });
+        return { ok: true, selector: input.selector };
+      } catch (err) {
+        return errorOf(err);
+      }
+    },
+
+    /** Drains the buffer: each message is reported exactly once. */
+    async consoleErrors(input: { viewport: BrowserViewport }): Promise<ConsoleErrorsResult> {
+      const pending = sessions.get(input.viewport);
+      if (!pending) return { count: 0, errors: [] };
+      try {
+        const session = await pending;
+        const errors = session.errors.splice(0, session.errors.length);
+        return { count: errors.length, errors };
+      } catch (err) {
+        return { count: 1, errors: [errorOf(err).error] };
+      }
+    },
+  };
+}
+
+export type BrowserActions = ReturnType<typeof makeBrowserActions>;
+
+/**
+ * Playwright tools for the `designer` and `tester` profiles (SPEC § Tools table).
+ * The browser is a module-level singleton, so repeated calls share one Chromium process;
+ * workflows must call `closeBrowser()` when they finish.
+ */
+export function makeBrowserTools(opts: BrowserToolsOptions) {
+  const actions = makeBrowserActions(opts);
+  const viewport = BrowserViewport.describe('which browser context to use');
+
+  return {
+    browser_goto: tool({
+      description: 'Navigate a viewport to a URL and return the final URL and page title.',
+      inputSchema: z.object({ url: z.string().describe('absolute URL to open'), viewport }),
+      execute: (input): Promise<GotoResult> => actions.goto(input),
+    }),
+
+    browser_screenshot: tool({
+      description:
+        'Save a full-page PNG of a viewport to <screenshotDir>/<screen>-<viewport>.png and return the path.',
+      inputSchema: z.object({
+        screen: z.string().describe('short name of the screen, e.g. "login"'),
+        viewport,
+      }),
+      execute: (input): Promise<ScreenshotResult> => actions.screenshot(input),
+    }),
+
+    browser_click: tool({
+      description: 'Click the first element matching a CSS/text selector in a viewport.',
+      inputSchema: z.object({ selector: z.string(), viewport }),
+      execute: (input): Promise<ClickResult> => actions.click(input),
+    }),
+
+    browser_fill: tool({
+      description: 'Fill an input/textarea matching a selector with a value.',
+      inputSchema: z.object({ selector: z.string(), value: z.string(), viewport }),
+      execute: (input): Promise<FillResult> => actions.fill(input),
+    }),
+
+    browser_console_errors: tool({
+      description:
+        'Return console errors and uncaught page errors collected since the last call, then clear the buffer.',
+      inputSchema: z.object({ viewport }),
+      execute: (input): Promise<ConsoleErrorsResult> => actions.consoleErrors(input),
+    }),
+  };
+}
+
+export type BrowserTools = ReturnType<typeof makeBrowserTools>;

@@ -17,19 +17,19 @@ Paste this (fill `T##`):
 > SPEC.md; design changes go back to the architect.
 
 ## Phase 0 — Bootstrap
-- [ ] [T01](T01.md) — Scaffold TypeScript project (deps, tsconfig, CLI stub)
-- [ ] [T02](T02.md) — CLAUDE.md + shared guardrails file
+- [x] [T01](T01.md) — Scaffold TypeScript project (deps, tsconfig, CLI stub)
+- [x] [T02](T02.md) — CLAUDE.md + shared guardrails file
 
 ## Phase 1 — Provider layer
-- [ ] [T03](T03.md) — Provider registry (lmstudio/openai/anthropic/claude-cli) + config resolution
+- [x] [T03](T03.md) — Provider registry (lmstudio/openai/anthropic/claude-cli) + config resolution
 - [ ] [T04](T04.md) — `aw ping` smoke command per provider
 
 ## Phase 2 — Tool layer
-- [ ] [T05](T05.md) — Core tools (fs/bash/git/grep/http) + permission profiles
-- [ ] [T06](T06.md) — Playwright toolset + browser smoke script
+- [x] [T05](T05.md) — Core tools (fs/bash/git/grep/http) + permission profiles
+- [x] [T06](T06.md) — Playwright toolset + browser smoke script
 
 ## Phase 3 — Agents
-- [ ] [T07](T07.md) — ui-designer / qa-tester / code-reviewer definitions + loader
+- [x] [T07](T07.md) — ui-designer / qa-tester / code-reviewer definitions + loader
 
 ## Phase 4 — Workflows (CLI)
 - [ ] [T08](T08.md) — `aw review` (verdict + severity-sorted findings, headless-safe)

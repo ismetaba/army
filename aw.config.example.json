@@ -1,0 +1,17 @@
+{
+  "workspace": "example",
+  "repoRoot": "/absolute/path/to/target-repo",
+  "defaults": { "provider": "lmstudio", "model": "qwen3-30b-a3b" },
+  "agents": {
+    "code-reviewer": { "provider": "anthropic", "model": "claude-sonnet-5" },
+    "ui-designer": { "provider": "openai", "model": "gpt-5" }
+  },
+  "app": {
+    "backend": { "start": "npm run dev:api", "port": 3001, "healthPath": "/health" },
+    "frontend": { "start": "npm run dev", "port": 3000 },
+    "baseUrl": "http://localhost:3001",
+    "testAccount": { "user": "test@example.com", "passEnv": "AW_TEST_PASSWORD" }
+  },
+  "viewports": { "mobile": { "width": 375, "height": 812 }, "desktop": { "width": 1440, "height": 900 } },
+  "offLimits": ["shared dev database"]
+}

@@ -3,3 +3,6 @@ dist/
 .env
 screenshots/
 test-reports/
+.next/
+test-results/
+*.local
