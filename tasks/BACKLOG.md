@@ -37,8 +37,8 @@ Paste this (fill `T##`):
 - [x] [T10](T10.md) — `aw design-loop` (implement → browser-verify → screenshots → stop for feedback)
 
 ## Phase 5 — Claude Code native layer
-- [ ] [T11](T11.md) — `.claude/` commands + subagents generated from agents/*.md
-- [ ] [T12](T12.md) — Headless `claude -p "/review"` verification (or documented fallback)
+- [x] [T11](T11.md) — `.claude/` commands + subagents generated from agents/*.md
+- [x] [T12](T12.md) — Headless `claude -p "/review"` verification (or documented fallback)
 
 ## Phase 6 — Real project + acceptance
 - [ ] [T13](T13.md) — `aw init` workspace onboarding

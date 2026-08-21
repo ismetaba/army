@@ -6,6 +6,7 @@ import {
   condensePlan,
   countCases,
   createReportFile,
+  extractPlanSection,
   isLooping,
   localDate,
   offTargetOrigins,
@@ -39,10 +40,22 @@ const CASE_TWO = {
   severity: 'MAJOR',
 };
 
+/** The required tail of T09 step 5, as amended: ===PLAN=== then ===CASES=== then ===SUMMARY===. */
 function tail(json: string, summary = 'One case passed.\nOne case failed.'): string {
-  return ['Plan:', '1. happy path', '2. invalid input', '', '===CASES===', json, '===SUMMARY===', summary].join(
-    '\n',
-  );
+  return [
+    '===PLAN===',
+    '- happy: GET /health returns 200',
+    '- invalid: POST an item with no name',
+    '===CASES===',
+    json,
+    '===SUMMARY===',
+    summary,
+  ].join('\n');
+}
+
+/** The pre-amendment shape: narration, then ===CASES===, with no ===PLAN=== section. */
+function tailWithoutPlan(json: string, preamble = 'Plan:\n1. happy path\n2. invalid input'): string {
+  return [preamble, '', '===CASES===', json, '===SUMMARY===', 'done'].join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -81,11 +94,13 @@ describe('parseCasesOutput — well-formed tail', () => {
     expect(r.summary).toBe('One case passed.\nOne case failed.');
   });
 
-  it('keeps everything before ===CASES=== as the test plan', () => {
+  it('reads the test plan out of the ===PLAN=== section', () => {
     const r = parse(tail(JSON.stringify([CASE_ONE])));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.plan).toBe('Plan:\n1. happy path\n2. invalid input');
+    expect(r.plan).toBe('- happy: GET /health returns 200\n- invalid: POST an item with no name');
+    expect(r.planSource).toBe('tail');
+    expect(r.warnings).toEqual([]);
   });
 
   it('caps the summary at 3 lines and says so', () => {
@@ -296,6 +311,163 @@ describe('parseCasesOutput — missing ===SUMMARY===', () => {
 });
 
 // ---------------------------------------------------------------------------
+// missing plan (T09 § Architect amendment)
+// ---------------------------------------------------------------------------
+
+describe('parseCasesOutput — ===PLAN===', () => {
+  it('uses the LAST ===PLAN=== above ===CASES===, so an echoed template does not win', () => {
+    const raw = [
+      'I will finish with:',
+      '===PLAN===',
+      '<the test plan>',
+      '===CASES===',
+      '[ { TestCase }, ... ]',
+      '',
+      'Now the real run.',
+      '===PLAN===',
+      '- happy: the real plan',
+      '===CASES===',
+      JSON.stringify([CASE_ONE]),
+      '===SUMMARY===',
+      'all good',
+    ].join('\n');
+    const r = parse(raw);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan).toBe('- happy: the real plan');
+    expect(r.planSource).toBe('tail');
+  });
+
+  it('tolerates markdown decoration around the marker', () => {
+    const r = parse(
+      ['**===PLAN===**', '- happy: ping', '===CASES===', JSON.stringify([CASE_ONE])].join('\n'),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan).toBe('- happy: ping');
+    expect(r.planSource).toBe('tail');
+  });
+
+  it('is a warning, not a failure, when the marker is missing', () => {
+    const r = parse(tailWithoutPlan(JSON.stringify([CASE_ONE])));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // The cases are the result: a missing plan section never triggers the format retry.
+    expect(r.cases).toHaveLength(1);
+    expect(r.planSource).toBe('preamble');
+    expect(r.plan).toBe('Plan:\n1. happy path\n2. invalid input');
+    expect(r.warnings).toContain(
+      'no `===PLAN===` marker — plan recovered from the agent’s prose, de-duplicated',
+    );
+  });
+
+  it('reports planSource "none" when there is no plan text at all', () => {
+    const r = parse(['===CASES===', JSON.stringify([CASE_ONE])].join('\n'));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan).toBe('');
+    expect(r.planSource).toBe('none');
+  });
+
+  it('falls back to the preamble when the ===PLAN=== section is empty', () => {
+    const raw = ['thinking out loud', '===PLAN===', '', '===CASES===', JSON.stringify([CASE_ONE])].join(
+      '\n',
+    );
+    const r = parse(raw);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.planSource).toBe('preamble');
+    // The marker line is not plan text: printing it under `## Test plan` is the very thing the
+    // preamble fallback exists to avoid.
+    expect(r.plan).toBe('thinking out loud');
+    expect(r.warnings.some((w) => w.includes('`===PLAN===` section was empty'))).toBe(true);
+  });
+
+  it('bounds the plan section when the model drops ===CASES===', () => {
+    const raw = [
+      '===PLAN===',
+      '- happy: GET /health returns 200',
+      '- edge: unknown path',
+      JSON.stringify([CASE_ONE]),
+      '===SUMMARY===',
+      'One case, passing.',
+    ].join('\n');
+    const r = parse(raw);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Unbounded, the slice ran to the end of the output and the "Test plan" section swallowed
+    // the raw case JSON, the ===SUMMARY=== marker and the summary text.
+    expect(r.plan).toBe('- happy: GET /health returns 200\n- edge: unknown path');
+    expect(r.cases).toHaveLength(1);
+    expect(r.summary).toBe('One case, passing.');
+    // A section whose end the parser had to guess is not reproduced verbatim.
+    expect(r.planSource).toBe('preamble');
+  });
+
+  it('never reads an illustrative case array out of the plan as a result', () => {
+    const raw = [
+      '===PLAN===',
+      'The cases I intend to emit look like this:',
+      JSON.stringify([{ id: 'x', name: 'EXAMPLE ONLY - not run', kind: 'happy', status: 'PASS' }]),
+      'I could not actually run them; the server refused every connection.',
+    ].join('\n');
+    const r = parse(raw);
+    // Reporting PASS for cases that were never executed is the one failure this workflow must
+    // not have. No case block below the plan is a parse failure, which triggers the retry.
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toContain('below the ===PLAN=== section');
+  });
+
+  it('keeps quoted markers out of the plan body', () => {
+    const raw = [
+      '===PLAN===',
+      'I will end my answer with this exact tail:',
+      '===CASES===',
+      '[ ... ]',
+      '===SUMMARY===',
+      '<3 lines>',
+      'That is the format.',
+      '===CASES===',
+      JSON.stringify([CASE_ONE]),
+      '===SUMMARY===',
+      'Done.',
+    ].join('\n');
+    const r = parse(raw);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.plan).not.toContain('===CASES===');
+    expect(r.plan).not.toContain('===SUMMARY===');
+    expect(r.summary).toBe('Done.');
+  });
+});
+
+describe('extractPlanSection', () => {
+  it('recovers a plan the model wrote in an intermediate step', () => {
+    // The prompt says "First write the test plan … Finally output …", so a model that answers
+    // with only ===CASES===/===SUMMARY=== has still written its plan — into the narration.
+    const narration = [
+      '===PLAN===',
+      '- happy: GET /health returns 200',
+      '- auth: no token is rejected',
+      '',
+      'Now running them.',
+    ].join('\n');
+    expect(extractPlanSection(narration)).toBe(
+      '- happy: GET /health returns 200\n- auth: no token is rejected\n\nNow running them.',
+    );
+    // stripTail cuts AT the marker, which is what threw the plan away.
+    expect(stripTail(narration)).toBe('');
+  });
+
+  it('stops at the next tail marker and returns "" when there is no section', () => {
+    expect(extractPlanSection('===PLAN===\n- happy\n===CASES===\n[]')).toBe('- happy');
+    expect(extractPlanSection('no markers here')).toBe('');
+    expect(extractPlanSection('===PLAN===\n\n===CASES===\n[]')).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // rejected / failing input
 // ---------------------------------------------------------------------------
 
@@ -425,7 +597,13 @@ describe('createReportFile', () => {
   it('creates the directory and survives a description with no usable characters', () => {
     const dir = path.join(tmpDir(), 'nested', 'test-reports');
     const file = createReportFile(dir, '???', '2026-08-21');
-    expect(path.basename(file)).toBe('test-2026-08-21.md');
+    // `slugify` is ASCII-only, so a description in another script slugifies to nothing. A digest
+    // of the description keeps those runs apart instead of naming every one of them `test-…`.
+    expect(path.basename(file)).toMatch(/^test-[0-9a-f]{8}-2026-08-21\.md$/);
+    expect(path.basename(createReportFile(dir, '???', '2026-08-21'))).toMatch(/-2\.md$/);
+    expect(path.basename(createReportFile(dir, '健康チェック', '2026-08-21'))).not.toBe(
+      path.basename(file),
+    );
     expect(fs.existsSync(file)).toBe(true);
   });
 
@@ -457,6 +635,84 @@ describe('condensePlan', () => {
   it('is empty for empty input', () => {
     expect(condensePlan('   \n\n  ')).toBe('');
   });
+
+  it('leaves a real ===PLAN=== section exactly as the model wrote it', () => {
+    const plan = ['- happy: POST a valid item', '- edge: empty name', '- auth: no token'].join('\n');
+    expect(condensePlan(plan)).toBe(plan);
+  });
+});
+
+// The shape of the live acceptance run's "## Test plan" section: the same plan restated, never
+// byte-identically, with "Let me …" transitions in between.
+const NARRATED_PLAN = [
+  "I'll create a test plan for verifying the POST /api/items endpoint behavior when an item has no name, then execute each case.",
+  '## Test Plan\n\n### Happy Path\n- POST /api/items with a valid item containing a name field\n- Expect: 201 Created response',
+  'Let me first check if the service is running and understand its structure:',
+  "I'll create a test plan for verifying the POST /api/items endpoint behavior with items that have no name, then execute each test case.",
+  'Let me check what endpoints are available by testing the root path:',
+  'I will write a test plan to verify the POST /api/items endpoint behaviour when an item has no name, then execute each test case.',
+].join('\n\n');
+
+describe('condensePlan — narration fallback', () => {
+  it('collapses a plan the model restated three times into one', () => {
+    const restated = [
+      'Test plan for POST /api/items:\n- happy: a valid item is created\n- invalid: an item with no name is rejected',
+      'Let me check the health endpoint first:',
+      'Test plan for the POST /api/items endpoint:\n- happy: a valid item gets created\n- invalid: an item without a name is rejected',
+      'Let me look at the source:',
+      'Test plan for the POST /api/items endpoint:\n- happy: a valid item is created\n- invalid: an item with no name gets rejected',
+    ].join('\n\n');
+    const out = condensePlan(restated, { fromNarration: true });
+    expect(out.split(/\n{2,}/)).toHaveLength(1);
+    expect(out).toContain('Test plan for POST /api/items:');
+    expect(out).not.toContain('Let me');
+  });
+
+  it('keeps one clean plan out of the live report’s narration', () => {
+    const out = condensePlan(NARRATED_PLAN, { fromNarration: true });
+    // The single plan body, each section once, and no "Let me …" transitions.
+    expect(out.match(/### Happy Path/g)).toHaveLength(1);
+    expect(out).not.toContain('Let me');
+    expect(out).not.toContain("I'll create a test plan");
+    expect(out.split(/\n{2,}/).length).toBeLessThanOrEqual(3);
+    expect(out.length).toBeLessThan(NARRATED_PLAN.length / 2);
+  });
+
+  it('keeps a restated section once, even when its bullets were reworded', () => {
+    // Word overlap alone misses this pair; the repeated heading is what gives it away.
+    const text = [
+      '### Invalid Input\n- POST /api/items without a name field entirely\n- Expect: 400 Bad Request',
+      '### Invalid Input\n- POST /api/items with no name field at all\n- Expect: 400 Bad Request',
+    ].join('\n\n');
+    const out = condensePlan(text, { fromNarration: true });
+    expect(out.match(/### Invalid Input/g)).toHaveLength(1);
+    expect(out).toContain('without a name field entirely');
+  });
+
+  it('keeps genuinely different sections of a plan', () => {
+    const text = [
+      '- happy: POST /api/items with a valid name returns 201',
+      '- auth: an unauthenticated request is rejected with 401',
+    ].join('\n\n');
+    expect(condensePlan(text, { fromNarration: true }).split(/\n{2,}/)).toHaveLength(2);
+  });
+
+  it('keeps the filler when the narration is nothing but filler', () => {
+    const text = ['Let me check the health endpoint:', 'Now let me try the items endpoint:'].join(
+      '\n\n',
+    );
+    expect(condensePlan(text, { fromNarration: true })).not.toBe('');
+  });
+
+  it('caps the section far below the ===PLAN=== cap', () => {
+    const text = Array.from(
+      { length: 200 },
+      (_, i) => `Section ${i}: ${'unique-word-' + i} ${'x'.repeat(60)}`,
+    ).join('\n\n');
+    const out = condensePlan(text, { fromNarration: true });
+    expect(out.split(/\n{2,}/).length).toBeLessThanOrEqual(6);
+    expect(out.length).toBeLessThanOrEqual(1_500 + '…[truncated]'.length);
+  });
 });
 
 describe('isLooping', () => {
@@ -486,6 +742,10 @@ describe('isLooping', () => {
 describe('stripTail', () => {
   it('keeps narration and drops anything from ===CASES=== onwards', () => {
     expect(stripTail('Plan:\n1. happy\n===CASES===\n[{"id":"c1"}]')).toBe('Plan:\n1. happy');
+  });
+
+  it('also cuts at ===PLAN===, so a half-written tail never lands in the report', () => {
+    expect(stripTail('Thinking.\n===PLAN===\n- happy\n===CASES===\n[]')).toBe('Thinking.');
   });
 
   it('returns the whole text when there is no marker', () => {
@@ -549,6 +809,33 @@ describe('renderReport', () => {
     expect(md).toContain('## Unparseable cases');
     expect(md).toContain('entry 1 — status: invalid option');
     expect(md).toContain('INCONCLUSIVE');
+  });
+
+  it('prints a ===PLAN=== section as written, with no provenance note', () => {
+    const md = renderReport({
+      ...base,
+      plan: '- happy: GET /health returns 200\n- auth: no token is rejected',
+      planSource: 'tail',
+      cases: [{ ...CASE_ONE } as never],
+      rejected: [],
+    });
+    expect(md).toContain('## Test plan\n\n- happy: GET /health returns 200');
+    expect(md).not.toContain('reconstructed from what it wrote');
+  });
+
+  it('condenses a plan recovered from narration and says where it came from', () => {
+    const md = renderReport({
+      ...base,
+      plan: NARRATED_PLAN,
+      planSource: 'preamble',
+      cases: [{ ...CASE_ONE } as never],
+      rejected: [],
+    });
+    const section = md.split('## Test plan')[1]!.split('## Cases')[0]!;
+    expect(section).toContain('reconstructed from what it wrote');
+    expect(section).not.toContain('Let me');
+    // The live report's version of this section was ~40 lines; one clean plan is a handful.
+    expect(section.split('\n').filter((l) => l.trim()).length).toBeLessThanOrEqual(12);
   });
 
   it('uses a longer fence when the quoted text contains one', () => {

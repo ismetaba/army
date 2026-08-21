@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { generateText, stepCountIs } from 'ai';
@@ -10,6 +11,21 @@ import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
 import { closeBrowser, makeBrowserTools } from '../tools/browser';
 import { ensureUp, isLocalUrl, probeUrl, slugify, type EnsureUpHandle } from '../util';
+import {
+  CLAUDE_CLI_REFUSAL,
+  clean,
+  describeModelFailure,
+  fail,
+  log,
+  messageOf,
+  oneLine,
+  truncate,
+  write,
+} from './common';
+
+// The `claude-cli` refusal is one shared constant (src/workflows/common.ts); re-exported here
+// so importers of this workflow keep seeing it where it has always been.
+export { CLAUDE_CLI_REFUSAL };
 
 export interface TestFeatureOptions {
   desc: string;
@@ -35,9 +51,6 @@ export interface TestFeatureResult {
 /** T09 step 5: the tester gets more room than the reviewer — one step per case, plus setup. */
 const MAX_STEPS = 40;
 
-/** SPEC § Agent session loop: tool calls/results are logged truncated to 2 KB. */
-const LOG_CAP = 2 * 1024;
-
 /**
  * Whole-session guard. 40 steps against a local model at 10–90 s each is ~60 min worst case,
  * so the default sits just above it. Override with `AW_TEST_TIMEOUT_MS`.
@@ -54,10 +67,26 @@ const START_POLL_MS = 2_000;
  * stuck model may have restated a dozen times. A plan longer than this is padding, not plan.
  */
 const MAX_PLAN_CHARS = 4 * 1024;
+/**
+ * Tighter caps for a plan recovered from narration rather than from `===PLAN===`.
+ *
+ * Narration is a transcript, not a plan: the live acceptance run's "## Test plan" section ran to
+ * ~40 lines of the same four-bullet plan restated five times, interleaved with "Let me check…".
+ * Deduplication removes most of that; these caps bound whatever survives it.
+ */
+const MAX_NARRATION_PLAN_PARAGRAPHS = 6;
+const MAX_NARRATION_PLAN_CHARS = 1_500;
+/**
+ * Token overlap (Jaccard) above which two paragraphs are the same paragraph said twice.
+ * The restatements observed differ only in a word or two ("with items that have no name" vs
+ * "when an item has no name"), which lands well above this; genuinely different sections of a
+ * plan (happy vs auth) land well below it.
+ */
+const NEAR_DUPLICATE_RATIO = 0.7;
 /** Per-field cap for request/response text quoted into the report. */
 const MAX_FIELD_CHARS = 8 * 1024;
 /** Longest slug used in a report filename (leaves room for the date and a `-12` suffix). */
-const MAX_SLUG_CHARS = 80;
+export const MAX_SLUG_CHARS = 80;
 /** SPEC § tail format: the summary is "3 lines max". */
 const MAX_SUMMARY_LINES = 3;
 
@@ -74,61 +103,8 @@ const MAX_EVIDENCE_CHARS = 24 * 1024;
 /** Cap of the model's own prose replayed to the format retry. */
 const MAX_NARRATION_CHARS = 8 * 1024;
 
-/** SPEC § Agent session loop — `claude-cli` silently ignores AI SDK tools, so refuse it. */
-export const CLAUDE_CLI_REFUSAL =
-  'provider "claude-cli" cannot run tool-using workflows: it does not execute AI SDK tools.\n' +
-  '  Use --provider anthropic (set ANTHROPIC_API_KEY), or the Claude Code native path (.claude/ commands).';
-
-/** C0/C1 control characters: an ANSI escape in model output can rewrite the terminal. */
-const CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
-
 // ---------------------------------------------------------------------------
-// output helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Write straight to the fd: `process.exit()` can drop output still queued on a pipe, and
- * every message this module prints is either the result or the reason for an exit.
- */
-function write(fd: 1 | 2, line: string): void {
-  try {
-    fs.writeSync(fd, `${line}\n`);
-  } catch {
-    // A closed/blocked stdio stream must never mask the actual test outcome.
-  }
-}
-
-/** Progress + tool logging. Always stderr, so stdout stays parseable. */
-function log(line: string): void {
-  write(2, line);
-}
-
-/** Print to stderr and exit 1 — a workflow failure never surfaces a stack trace. */
-function fail(message: string): never {
-  write(2, message);
-  process.exit(1);
-}
-
-function truncate(value: string, limit = LOG_CAP): string {
-  return value.length <= limit ? value : `${value.slice(0, limit)}…[truncated]`;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-/** Drop control characters but keep newlines and tabs — reports are multi-line by design. */
-function clean(text: string): string {
-  return text.replace(CONTROL_RE, '');
-}
-
-/** Single-line form: control characters and newlines all collapse to spaces. */
-function oneLine(text: string): string {
-  return clean(text).replace(/\s+/g, ' ').trim();
-}
-
-// ---------------------------------------------------------------------------
-// ===CASES=== / ===SUMMARY=== tail parser
+// ===PLAN=== / ===CASES=== / ===SUMMARY=== tail parser
 // ---------------------------------------------------------------------------
 
 /** A case object the model emitted that could not be validated. Never silently dropped. */
@@ -140,11 +116,23 @@ export interface RejectedCase {
   raw: string;
 }
 
+/**
+ * Where the report's "Test plan" section came from.
+ *
+ * - `tail`     — the model's own `===PLAN===` section: structured, and the only source that
+ *                needs no cleaning up (T09 § Architect amendment).
+ * - `preamble` — no `===PLAN===` marker, so whatever the model wrote above `===CASES===`.
+ * - `none`     — neither; the caller falls back to the session narration.
+ */
+export type PlanSource = 'tail' | 'preamble' | 'none';
+
 export type ParsedCases =
   | {
       ok: true;
-      /** Everything the model wrote before `===CASES===` — the test plan and its narration. */
+      /** The `===PLAN===` section, or the prose before `===CASES===` when it is missing. */
       plan: string;
+      /** Which of those two `plan` is — the report says so, and condenses accordingly. */
+      planSource: PlanSource;
       cases: TestCase[];
       /** At most 3 lines; empty when the model omitted `===SUMMARY===`. */
       summary: string;
@@ -153,19 +141,70 @@ export type ParsedCases =
     }
   | { ok: false; reason: string; warnings: string[] };
 
+const PLAN_MARKER_RE = /^=+\s*PLAN\s*=+$/i;
 const CASES_MARKER_RE = /^=+\s*CASES\s*=+$/i;
 const SUMMARY_MARKER_RE = /^=+\s*SUMMARY\s*=+$/i;
 const FENCE_RE = /^(?:```|~~~)\w*$/;
 
 /**
- * Everything before the first `===CASES===` line. Used on the step-by-step narration that
- * backs the report's plan section, so a half-written tail in an intermediate step never
- * lands in the report as prose.
+ * Everything before the first tail marker (`===PLAN===` or `===CASES===`). Used on the
+ * step-by-step narration that backs the report's plan section, so a half-written tail in an
+ * intermediate step never lands in the report as prose.
  */
 export function stripTail(text: string): string {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  const at = lines.findIndex((l) => CASES_MARKER_RE.test(undecorate(l)));
+  const at = lines.findIndex((l) => {
+    const bare = undecorate(l);
+    return PLAN_MARKER_RE.test(bare) || CASES_MARKER_RE.test(bare);
+  });
   return clean((at < 0 ? lines : lines.slice(0, at)).join('\n')).trim();
+}
+
+/** True for a `===PLAN===` / `===CASES===` / `===SUMMARY===` line, decorated or not. */
+function isMarkerLine(line: string): boolean {
+  const bare = undecorate(line);
+  return PLAN_MARKER_RE.test(bare) || CASES_MARKER_RE.test(bare) || SUMMARY_MARKER_RE.test(bare);
+}
+
+/**
+ * The body of a plan section: its own lines, minus any marker line inside it.
+ *
+ * A model that quotes the required tail inside its plan ("I will end my answer with this exact
+ * tail: ===CASES=== …") would otherwise reproduce those markers under `## Test plan`, where a
+ * reader cannot tell a quoted template from a real result.
+ */
+function planBody(bodyLines: readonly string[]): string {
+  return clean(bodyLines.filter((l) => !isMarkerLine(l)).join('\n')).trim();
+}
+
+/**
+ * The `===PLAN===` section of arbitrary text — used on the session narration, where the model
+ * legitimately writes its plan in an intermediate step (the prompt says "First write the test
+ * plan … Then execute each case. Finally output …") and the final answer carries only
+ * `===CASES===`/`===SUMMARY===`. `stripTail` would cut that narration *at* the marker and throw
+ * the plan away, so the section is looked for first and `stripTail` is only the fallback.
+ *
+ * Returns `''` when there is no marker or the section is empty.
+ */
+export function extractPlanSection(text: string): string {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  let planAt = -1;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (PLAN_MARKER_RE.test(undecorate(lines[i]!))) {
+      planAt = i;
+      break;
+    }
+  }
+  if (planAt < 0) return '';
+  let end = lines.length;
+  for (let i = planAt + 1; i < lines.length; i += 1) {
+    const bare = undecorate(lines[i]!);
+    if (CASES_MARKER_RE.test(bare) || SUMMARY_MARKER_RE.test(bare)) {
+      end = i;
+      break;
+    }
+  }
+  return planBody(lines.slice(planAt + 1, end));
 }
 
 /** Strip the markdown decoration a model may wrap a marker line in (`**===CASES===**`). */
@@ -315,8 +354,9 @@ function asSteps(value: unknown): string[] | undefined {
  *
  * Not tolerated — these fail so the caller retries rather than reporting a half-truth:
  * a missing `===CASES===` marker, unbalanced or unparseable JSON, an empty array, and a case
- * list in which every entry is invalid. A *missing* `===SUMMARY===` is only a warning: the
- * cases are the result, and the caller can always synthesise a count.
+ * list in which every entry is invalid. A *missing* `===SUMMARY===` or `===PLAN===` is only a
+ * warning (T09 § Architect amendment): the cases are the result, the count always yields a
+ * summary, and the plan can be recovered — messily — from what the model said along the way.
  */
 export function parseCasesOutput(raw: unknown): ParsedCases {
   const warnings: string[] = [];
@@ -346,29 +386,102 @@ export function parseCasesOutput(raw: unknown): ParsedCases {
     }
   }
 
+  // T09 § Architect amendment: the plan comes back through the tail, like the cases. The LAST
+  // `===PLAN===` above `===CASES===` wins, for the same reason the last `===CASES===` does —
+  // a model that echoes the prompt template emits the marker twice.
+  let planAt = -1;
+  for (let i = (casesAt < 0 ? lines.length : casesAt) - 1; i >= 0; i -= 1) {
+    if (PLAN_MARKER_RE.test(undecorate(lines[i]!))) {
+      planAt = i;
+      break;
+    }
+  }
+
+  // Where the plan section stops and the case block starts.
+  //
+  // With `===CASES===` present that boundary is the marker. Without it the plan section would
+  // run to the end of the output and swallow the JSON, the `===SUMMARY===` marker and the
+  // summary text — and, worse, an illustrative array *inside* the plan ("the cases I intend to
+  // emit look like this: [...]") would be scanned as if it were the result and reported as
+  // passing tests that were never run. So when the marker is missing:
+  //   - `===SUMMARY===` below the plan: the cases sit between the two, starting at the first
+  //     line that opens a JSON value — the same boundary `extractJsonValue` would find;
+  //   - nothing below the plan at all: the model emitted a plan and no results. That is a parse
+  //     failure, and a parse failure is what triggers the single format retry.
+  let planEnd = casesAt >= 0 ? casesAt : lines.length;
+  let caseStart = casesAt + 1; // 0 when the marker is missing
+  if (casesAt < 0 && planAt >= 0) {
+    const limit = summaryAt > planAt ? summaryAt : lines.length;
+    let jsonAt = -1;
+    if (summaryAt > planAt) {
+      for (let i = planAt + 1; i < limit; i += 1) {
+        if (/^\s*[[{]/.test(lines[i]!)) {
+          jsonAt = i;
+          break;
+        }
+      }
+    }
+    planEnd = jsonAt < 0 ? limit : jsonAt;
+    caseStart = planEnd;
+  }
+
   if (casesAt < 0) {
     // Observed twice on the format retry: the model drops the marker line(s) and answers with
     // the bare JSON array. Nothing is lost by looking for the array anyway — validation below
     // is strict (every entry must be an object with a usable `status`), so prose that merely
     // contains a bracket still fails, just with a more accurate reason than "no marker".
     warnings.push(
-      summaryAt < 0
-        ? 'no `===CASES===` marker — parsed the whole output as the case list'
-        : 'no `===CASES===` marker — read the text before `===SUMMARY===` as the cases',
+      planAt >= 0
+        ? summaryAt > planAt
+          ? 'no `===CASES===` marker — read the JSON between the plan and `===SUMMARY===` as the cases'
+          : 'no `===CASES===` marker below the `===PLAN===` section — a plan is not a result'
+        : summaryAt < 0
+          ? 'no `===CASES===` marker — parsed the whole output as the case list'
+          : 'no `===CASES===` marker — read the text before `===SUMMARY===` as the cases',
     );
   }
   if (summaryAt < 0) warnings.push('no `===SUMMARY===` marker — summary generated from the counts');
 
-  // With no `===CASES===` line there is no prose/JSON boundary to split on, so the plan is
-  // empty and the caller falls back to the session narration.
-  const plan = casesAt < 0 ? '' : clean(lines.slice(0, casesAt).join('\n')).trim();
-  const blockLines = lines.slice(casesAt + 1, summaryAt < 0 ? lines.length : summaryAt);
+  let plan = '';
+  let planSource: PlanSource = 'none';
+  if (planAt >= 0) {
+    plan = planBody(lines.slice(planAt + 1, planEnd));
+    if (plan) {
+      // Only a section the model actually closed with `===CASES===` is reproduced verbatim.
+      // One whose end the parser had to guess is treated like reconstructed prose: condensed,
+      // and labelled in the report, so nobody reads a guess as the agent's own words.
+      planSource = casesAt >= 0 ? 'tail' : 'preamble';
+    } else {
+      warnings.push('the `===PLAN===` section was empty — plan recovered from the agent’s prose');
+    }
+  } else {
+    // A warning, never a retry trigger: the cases are the result, and a missing plan section
+    // costs a tidy report, not a correct one.
+    warnings.push('no `===PLAN===` marker — plan recovered from the agent’s prose, de-duplicated');
+  }
+  if (planSource === 'none') {
+    // Stop at the `===PLAN===` line when there is one: the marker itself is not plan text, and
+    // printing it under `## Test plan` is exactly what this fallback exists to avoid.
+    const end = planAt >= 0 ? planAt : casesAt;
+    const preamble = end > 0 ? clean(lines.slice(0, end).join('\n')).trim() : '';
+    if (preamble) {
+      plan = preamble;
+      planSource = 'preamble';
+    }
+  }
+  const blockEnd = summaryAt < caseStart ? lines.length : summaryAt;
+  const blockLines = lines.slice(caseStart, blockEnd);
   // A fenced block is fine; dropping only whole-line fences keeps ``` inside a JSON string safe.
   const block = blockLines.filter((l) => !FENCE_RE.test(l.trim())).join('\n');
 
   const jsonText = extractJsonValue(block);
   if (jsonText === null) {
-    const where = casesAt < 0 ? 'the output' : 'the ===CASES=== block';
+    const where =
+      casesAt >= 0
+        ? 'the ===CASES=== block'
+        : planAt >= 0
+          ? 'the text below the ===PLAN=== section'
+          : 'the output';
     return {
       ok: false,
       reason: block.trim()
@@ -490,7 +603,7 @@ export function parseCasesOutput(raw: unknown): ParsedCases {
   }
   const summary = summaryLines.slice(0, MAX_SUMMARY_LINES).join('\n');
 
-  return { ok: true, plan, cases, summary, rejected, warnings };
+  return { ok: true, plan, planSource, cases, summary, rejected, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -547,24 +660,118 @@ export function offTargetOrigins(cases: readonly TestCase[], target: string): st
   return [...found].sort();
 }
 
+/** Word set of a paragraph, for the near-duplicate test. */
+function wordsOf(paragraph: string): Set<string> {
+  return new Set(
+    paragraph
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .split(' ')
+      .filter(Boolean),
+  );
+}
+
+/** |A ∩ B| / |A ∪ B| — 1 when two paragraphs use exactly the same words. */
+function overlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const w of a) if (b.has(w)) shared += 1;
+  return shared / (a.size + b.size - shared);
+}
+
+/**
+ * A paragraph that only announces what the model is about to do.
+ *
+ * These are the "Let me check…" lines the architect named: in the live report they made up half
+ * the "Test plan" section, and not one of them says anything about the plan. Dropping them is
+ * only ever done on narration, and only when something else survives.
+ */
+const NARRATION_OPENER_RE =
+  /^(?:ok(?:ay)?|now|next|then|first|finally)?[,\s]*(?:let(?:'|’)?s|let me|i(?:'|’)?(?:ll|m)|i will|i am going to|i need to|i should|i can)\b/i;
+
+function isNarrationFiller(paragraph: string): boolean {
+  // Multi-line paragraphs carry the actual bullets; only a lone sentence can be pure filler.
+  if (paragraph.includes('\n')) return false;
+  return NARRATION_OPENER_RE.test(paragraph.trim());
+}
+
+/** A first line that titles the paragraph: `### Happy Path`, `**Edge cases**`, `Auth:`. */
+const SECTION_HEADING_RE = /^(?:#{1,6}\s+\S.*|\*{2}[^*]+\*{2}|.{1,60}:)$/;
+
+/**
+ * The section a narrated paragraph belongs to, or `null` when it titles nothing.
+ *
+ * A model that restarts its plan writes the same headings again with slightly different bullets
+ * underneath — near-identical prose the word-overlap test misses (`- POST … without a name field
+ * entirely` vs `- POST … with no name field at all` share barely half their words). The heading
+ * is the reliable signal that this is the same section of the same plan, said twice.
+ */
+function sectionKey(paragraph: string): string | null {
+  const [first, ...rest] = paragraph.split('\n');
+  const head = (first ?? '').trim();
+  if (rest.length === 0 || !SECTION_HEADING_RE.test(head)) return null;
+  return head.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() || null;
+}
+
+export interface CondensePlanOptions {
+  /**
+   * The text is session narration, not a `===PLAN===` section: collapse near-duplicate
+   * restatements, drop "Let me …" filler, and cap the section much harder.
+   */
+  fromNarration?: boolean;
+}
+
 /**
  * Turn the plan text into something a human will actually read: drop repeated paragraphs and
  * keep the head.
  *
- * Observed against the wrong-port target: the model re-announced "I'll create a test plan…"
- * on nearly every one of its 40 steps, and the raw narration ran to 8 KB of the same paragraph.
+ * Observed against the wrong-port target: the model re-announced "I'll create a test plan…" on
+ * nearly every one of its 40 steps, and the live acceptance report's "## Test plan" section was
+ * ~40 lines of the same four-bullet plan restated five times, interleaved with "Let me check…".
  * The FIRST statement of the plan is the plan; the restatements are the model spinning.
+ *
+ * With `fromNarration`, four extra passes run — one section heading at most once, near-duplicate
+ * collapse (the restatements are never byte-identical), filler removal, and a hard
+ * paragraph/character cap. They are NOT run on
+ * a real `===PLAN===` section: that text is the model's considered answer and is reproduced as
+ * written, only de-duplicated and capped at `MAX_PLAN_CHARS`.
  */
-export function condensePlan(text: string): string {
+export function condensePlan(text: string, opts: CondensePlanOptions = {}): string {
   const seen = new Set<string>();
-  const kept: string[] = [];
+  const sections = new Set<string>();
+  const keptWords: Set<string>[] = [];
+  let kept: string[] = [];
   for (const paragraph of text.split(/\n{2,}/)) {
     const trimmed = paragraph.trim();
     if (!trimmed) continue;
     const key = trimmed.toLowerCase().replace(/\s+/g, ' ');
     if (seen.has(key)) continue;
     seen.add(key);
+    if (opts.fromNarration) {
+      // Same heading, second time round: the model restarted its plan.
+      const section = sectionKey(trimmed);
+      if (section !== null) {
+        if (sections.has(section)) continue;
+        sections.add(section);
+      }
+      const words = wordsOf(trimmed);
+      // "…when an item has no name" vs "…with items that have no name": same paragraph, and
+      // keeping both is exactly the failure this pass exists to remove.
+      if (keptWords.some((prev) => overlap(prev, words) >= NEAR_DUPLICATE_RATIO)) continue;
+      keptWords.push(words);
+    }
     kept.push(trimmed);
+  }
+
+  if (opts.fromNarration) {
+    const substantive = kept.filter((p) => !isNarrationFiller(p));
+    // Only drop the filler when something is left: a session that narrated nothing else still
+    // deserves its own words in the report rather than an empty section.
+    if (substantive.length > 0) kept = substantive;
+    if (kept.length > MAX_NARRATION_PLAN_PARAGRAPHS) {
+      kept = kept.slice(0, MAX_NARRATION_PLAN_PARAGRAPHS);
+    }
+    return truncate(kept.join('\n\n'), MAX_NARRATION_PLAN_CHARS);
   }
   return truncate(kept.join('\n\n'), MAX_PLAN_CHARS);
 }
@@ -594,7 +801,10 @@ export function localDate(now: Date = new Date()): string {
 export function createReportFile(reportDir: string, desc: string, date = localDate()): string {
   fs.mkdirSync(reportDir, { recursive: true });
   let slug = slugify(desc).slice(0, MAX_SLUG_CHARS).replace(/-$/, '');
-  if (!slug) slug = 'test';
+  // `slugify` keeps ASCII only, so a description written entirely in another script slugifies to
+  // nothing. A short digest of the description keeps those runs apart instead of naming every
+  // one of them `test-<date>`, `test-<date>-2`, … with no hint of which is which.
+  if (!slug) slug = `test-${createHash('sha256').update(desc).digest('hex').slice(0, 8)}`;
   for (let n = 1; ; n += 1) {
     const suffix = n === 1 ? '' : `-${n}`;
     const file = path.join(reportDir, `${slug}-${date}${suffix}.md`);
@@ -613,6 +823,12 @@ export interface ReportInput {
   provider: string;
   model: string;
   plan: string;
+  /**
+   * Where `plan` came from (default `'tail'`). Anything other than the model's own
+   * `===PLAN===` section is condensed hard and labelled in the report, so a reader can tell a
+   * written plan from one reconstructed out of the transcript.
+   */
+  planSource?: PlanSource;
   cases: readonly TestCase[];
   rejected: readonly RejectedCase[];
   summary: string;
@@ -649,7 +865,17 @@ export function renderReport(input: ReportInput): string {
 
   out.push('## Test plan');
   out.push('');
-  const plan = condensePlan(input.plan);
+  // Only a real `===PLAN===` section is reproduced as written; anything reconstructed from the
+  // model's prose goes through the narration passes, because that prose is a transcript.
+  const planSource = input.planSource ?? 'tail';
+  const plan = condensePlan(input.plan, { fromNarration: planSource !== 'tail' });
+  if (plan && planSource !== 'tail') {
+    out.push(
+      "_The agent's final answer carried no complete `===PLAN===` section; this is reconstructed" +
+        ' from what it wrote during the run, with repeated restatements removed._',
+    );
+    out.push('');
+  }
   out.push(plan || '_The agent recorded no plan before the case list._');
   out.push('');
 
@@ -825,6 +1051,8 @@ function buildPrompt(args: {
     '',
     'First write the test plan (happy, edge, invalid, auth). Then execute each case. Finally output a JSON block:',
     '',
+    '===PLAN===',
+    '<the test plan, as a short markdown list: happy / edge / invalid / auth>',
     '===CASES===',
     '[ { TestCase }, ... ]',
     '===SUMMARY===',
@@ -842,9 +1070,12 @@ function buildPrompt(args: {
     '- `severity` is only for FAIL cases;',
     '- you are testing, not fixing: never edit application source, and never report a fix as done;',
     `- every case must be run against ${target} — never against a different host or port;`,
+    '- the ===PLAN=== section is the final plan, written once, as at most 8 short bullets: it is',
+    '  what the report prints, so do not restate it and do not narrate it there;',
     '- never start, restart or stop the app, and never run a long-running command (a dev server,',
     '  `npm run dev`, a watcher): it would outlive this session and hold the port;',
-    '- the ===CASES=== line, the JSON array and the ===SUMMARY=== line are the LAST thing you write;',
+    '- the ===PLAN===, ===CASES=== and ===SUMMARY=== sections are the LAST thing you write, in',
+    '  that order;',
     '- no markdown code fence around the JSON, no comments inside it, no text after the summary;',
     '- never ask questions.',
   );
@@ -919,6 +1150,11 @@ function buildRetryPrompt(args: {
     '',
     'Now output ONLY this, and nothing else:',
     '',
+    '===PLAN===',
+    '- happy: <one line>',
+    '- edge: <one line>',
+    '- invalid: <one line>',
+    '- auth: <one line>',
     '===CASES===',
     '[ { "id": "c1", "name": "short case name", "kind": "happy|edge|invalid|auth",',
     '    "status": "PASS|FAIL|SKIP", "request": "METHOD URL + headers + body, verbatim",',
@@ -928,6 +1164,7 @@ function buildRetryPrompt(args: {
     '<3 lines max>',
     '',
     'Rules:',
+    '- the ===PLAN=== section is the plan you actually followed, written once, in four lines;',
     '- report ONLY cases the log above supports; never invent a request, a response or a status;',
     '- if the log shows no test was actually executed, emit exactly one case with',
     '  "status": "SKIP" whose name says the session produced no executed case;',
@@ -943,18 +1180,6 @@ function buildRetryPrompt(args: {
 function timeoutMs(): number {
   const raw = Number.parseInt(process.env.AW_TEST_TIMEOUT_MS?.trim() ?? '', 10);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
-}
-
-function describeModelFailure(err: unknown, provider: string): string {
-  const text = messageOf(err);
-  if (/ECONNREFUSED|fetch failed|Cannot connect to API/i.test(text) && provider === 'lmstudio') {
-    const base = process.env.LMSTUDIO_BASE_URL?.trim() || 'http://localhost:1234/v1';
-    return `LM Studio is not reachable at ${base}. Start LM Studio and enable the local server.`;
-  }
-  if (/abort|timed? ?out/i.test(text)) {
-    return `${provider} did not finish the test run within ${timeoutMs() / 1000}s.`;
-  }
-  return text;
 }
 
 /**
@@ -1132,7 +1357,9 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
       });
     } catch (err) {
       // getModel() throws here for a missing API key; the SDK throws for transport failures.
-      return bail(describeModelFailure(err, provider));
+      return bail(
+        describeModelFailure(err, provider, { activity: 'the test run', timeoutMs: timeoutMs() }),
+      );
     }
     const stop: StopReason = !withTools
       ? null
@@ -1215,6 +1442,20 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
   // --- report (T09 step 7) ---------------------------------------------------
   const counts = countCases(parsed.cases);
   const summary = parsed.summary.trim() || `PASS ${counts.passed}/${counts.total}.`;
+
+  // T09 § Architect amendment: `===PLAN===` first, then the model's own preamble, then — only
+  // as a last resort — the session narration, which is a transcript and is condensed as one.
+  let planText = parsed.plan;
+  let planSource = parsed.planSource;
+  if (planSource === 'none') {
+    // The prompt asks for the plan first and the tail last, so a model that writes its plan in
+    // an intermediate step and answers with only `===CASES===`/`===SUMMARY===` is following it.
+    // Look for that section before `stripTail`, which cuts the narration *at* the marker and
+    // would discard the very lines this fallback exists to recover.
+    planText = extractPlanSection(attempt.narration) || stripTail(attempt.narration);
+    planSource = planText ? 'preamble' : 'none';
+  }
+
   const reportDir = path.join(repoRoot, 'test-reports');
   let reportPath: string;
   try {
@@ -1226,7 +1467,8 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
         target,
         provider,
         model,
-        plan: parsed.plan || stripTail(attempt.narration),
+        plan: planText,
+        planSource,
         cases: parsed.cases,
         rejected: parsed.rejected,
         summary,

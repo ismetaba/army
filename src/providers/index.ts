@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createOpenAI, openai } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
 import type { ProviderId } from '../../shared/schemas';
+import { CLAUDE_CLI_REFUSAL } from '../workflows/common';
 
 function requireEnv(name: string): void {
   if (!process.env[name]) throw new Error(`${name} is not set (add it to .env)`);
@@ -25,7 +26,10 @@ export function getModel(provider: ProviderId, modelId: string) {
     case 'claude-cli': {
       // Import lazily; check the package README/types for the exact factory export
       // (expected: `claudeCode`). No API key needed — uses the local Claude Code login.
-      throw new Error('claude-cli supports no AI SDK tool execution — use provider "anthropic" for CLI workflows, or the .claude/ native path. (ping may still implement it: see T04)');
+      // One wording, shared with the three workflows (src/workflows/common.ts): the refusal is a
+      // user-facing contract and a second sentence for the same condition is exactly the drift
+      // that constant exists to prevent.
+      throw new Error(`${CLAUDE_CLI_REFUSAL}\n  (ping may still implement it: see T04)`);
     }
   }
 }

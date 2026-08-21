@@ -37,7 +37,17 @@ export function slugify(s: string): string {
  */
 export function isLoopbackHost(hostname: string): boolean {
   const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
-  return host === 'localhost' || host === '::1' || /^127\./.test(host);
+  if (host === 'localhost' || host === '::1') return true;
+  // `/^127\./` matched `127.evil.com` — a DNS name that resolves anywhere on the internet, which
+  // then skipped T09 step 4's `app.stagingUrl` requirement and pointed an agent session at an
+  // external host. Only a numeric address is loopback: every label a number, the first one 127.
+  const labels = host.split('.');
+  return (
+    labels.length >= 2 &&
+    labels.length <= 4 &&
+    labels.every((l) => /^\d{1,3}$/.test(l)) &&
+    labels[0] === '127'
+  );
 }
 
 /** True when `url` is a parseable http(s) URL pointing at this machine. */

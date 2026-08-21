@@ -11,9 +11,24 @@ import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
 import { closeBrowser, makeBrowserTools } from '../tools/browser';
 import { ensureUp, slugify, type EnsureUpHandle } from '../util';
+import {
+  CLAUDE_CLI_REFUSAL,
+  clean,
+  describeModelFailure,
+  fail,
+  log,
+  messageOf,
+  oneLine,
+  truncate,
+  write,
+} from './common';
 // The stuck-agent stop condition written for T09. Same failure mode here (a local model that
 // re-issues one tool call until the step budget is gone), so it is reused, not re-implemented.
 import { isLooping } from './test-feature';
+
+// The `claude-cli` refusal is one shared constant (src/workflows/common.ts); re-exported here
+// so importers of this workflow keep seeing it where it has always been.
+export { CLAUDE_CLI_REFUSAL };
 
 const execFileAsync = promisify(execFileCb);
 
@@ -45,9 +60,6 @@ export interface DesignLoopResult {
 /** T10 step 5: the designer implements *and* verifies, so it gets the largest budget. */
 const MAX_STEPS = 60;
 
-/** SPEC § Agent session loop: tool calls/results are logged truncated to 2 KB. */
-const LOG_CAP = 2 * 1024;
-
 /**
  * Whole-session guard. 60 steps against a local model at 10–90 s each is ~90 min worst case,
  * so the default sits just above it. Override with `AW_DESIGN_TIMEOUT_MS`.
@@ -70,7 +82,7 @@ const MAX_PLAN_LINE_CHARS = 300;
 const MAX_SPEC_BYTES = 64 * 1024;
 
 /** Longest slug used as a directory name under `screenshots/`. */
-const MAX_SLUG_CHARS = 60;
+export const MAX_SLUG_CHARS = 60;
 
 /** Frontend file list handed to the plan step; a repo with more files sends the first N. */
 const MAX_LISTED_FILES = 200;
@@ -81,16 +93,8 @@ const MAX_JUDGMENT_CHARS = 400;
 
 const EXEC_MAX_BUFFER = 64 * 1024 * 1024;
 
-/** SPEC § Agent session loop — `claude-cli` silently ignores AI SDK tools, so refuse it. */
-export const CLAUDE_CLI_REFUSAL =
-  'provider "claude-cli" cannot run tool-using workflows: it does not execute AI SDK tools.\n' +
-  '  Use --provider anthropic (set ANTHROPIC_API_KEY), or the Claude Code native path (.claude/ commands).';
-
 /** T10 step 6 — the guard that makes "I implemented it" unacceptable on its own. */
 export const NO_SCREENSHOTS = 'agent finished without screenshots — not acceptable';
-
-/** C0/C1 control characters: an ANSI escape in model output can rewrite the terminal. */
-const CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
 
 /** Leading markdown decoration: `- `, `* `, `1. `, `> `, `### `. */
 const BLOCK_MARKER_RE = /^(?:>+\s*|#{1,6}\s+|(?:[-*+•]|\d{1,3}[.)])\s+)/;
@@ -98,47 +102,6 @@ const BLOCK_MARKER_RE = /^(?:>+\s*|#{1,6}\s+|(?:[-*+•]|\d{1,3}[.)])\s+)/;
 // ---------------------------------------------------------------------------
 // output helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Write straight to the fd: `process.exit()` can drop output still queued on a pipe, and
- * every message this module prints is either the result or the reason for an exit.
- */
-function write(fd: 1 | 2, line: string): void {
-  try {
-    fs.writeSync(fd, `${line}\n`);
-  } catch {
-    // A closed/blocked stdio stream must never mask the actual outcome.
-  }
-}
-
-/** Progress + tool logging. Always stderr, so stdout stays the presentation block. */
-function log(line: string): void {
-  write(2, line);
-}
-
-/** Print to stderr and exit 1 — a workflow failure never surfaces a stack trace. */
-function fail(message: string): never {
-  write(2, message);
-  process.exit(1);
-}
-
-function truncate(value: string, limit = LOG_CAP): string {
-  return value.length <= limit ? value : `${value.slice(0, limit)}…[truncated]`;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-/** Drop control characters but keep newlines and tabs. */
-function clean(text: string): string {
-  return text.replace(CONTROL_RE, '');
-}
-
-/** Single-line form: control characters and newlines all collapse to spaces. */
-function oneLine(text: string): string {
-  return clean(text).replace(/\s+/g, ' ').trim();
-}
 
 function undecorate(line: string): string {
   let s = line.trim();
@@ -484,7 +447,8 @@ export function buildSessionPrompt(args: {
     '- edit files with write_file/edit_file; the dev server hot-reloads, so no build step is needed;',
     '- browser_goto the URL above, then browser_screenshot with `screen` (e.g. "about") and',
     '  `viewport` ("mobile" and "desktop") — the file name is derived from those two, so never',
-    '  pass a path or a ".png" suffix;',
+    '  pass a path or a ".png" suffix, and never put the viewport in `screen` ("about", not',
+    '  "about-mobile"): the viewport is appended for you;',
     '- at least one screenshot per touched screen per viewport is MANDATORY: work with no',
     '  screenshot is treated as unfinished and the run fails;',
     '- check browser_console_errors on every screen you touched before you finish;',
@@ -520,18 +484,6 @@ function joinUrl(base: string, suffix: string): string {
 function timeoutMs(): number {
   const raw = Number.parseInt(process.env.AW_DESIGN_TIMEOUT_MS?.trim() ?? '', 10);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
-}
-
-function describeModelFailure(err: unknown, provider: string): string {
-  const text = messageOf(err);
-  if (/ECONNREFUSED|fetch failed|Cannot connect to API/i.test(text) && provider === 'lmstudio') {
-    const base = process.env.LMSTUDIO_BASE_URL?.trim() || 'http://localhost:1234/v1';
-    return `LM Studio is not reachable at ${base}. Start LM Studio and enable the local server.`;
-  }
-  if (/abort|timed? ?out/i.test(text)) {
-    return `${provider} did not finish the design session within ${timeoutMs() / 1000}s.`;
-  }
-  return text;
 }
 
 /**
@@ -675,7 +627,12 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
     } catch (err) {
       // getModel() throws here for a missing API key; the SDK throws for transport failures.
       // bail() stops Chromium and every dev server this run started before exiting.
-      return bail(describeModelFailure(err, provider));
+      return bail(
+        describeModelFailure(err, provider, {
+          activity: 'the design session',
+          timeoutMs: timeoutMs(),
+        }),
+      );
     }
     // The final message is often empty on a local model that narrated between tool calls;
     // fall back to the last step that said anything.

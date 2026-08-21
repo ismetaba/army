@@ -7,6 +7,19 @@ import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
 import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
+import {
+  CLAUDE_CLI_REFUSAL,
+  describeModelFailure,
+  fail,
+  log,
+  messageOf,
+  truncate,
+  write,
+} from './common';
+
+// The `claude-cli` refusal is one shared constant (src/workflows/common.ts); re-exported here
+// so importers of this workflow keep seeing it where it has always been.
+export { CLAUDE_CLI_REFUSAL };
 
 const execFileAsync = promisify(execFileCb);
 
@@ -31,9 +44,6 @@ const MAX_STEPS = 25;
 /** T08 step 3: the diff handed to the model is capped at 60 KB. */
 const MAX_DIFF_BYTES = 60 * 1024;
 
-/** SPEC § Agent session loop: tool calls/results are logged truncated to 2 KB. */
-const LOG_CAP = 2 * 1024;
-
 const EXEC_MAX_BUFFER = 64 * 1024 * 1024;
 
 /**
@@ -50,11 +60,6 @@ const MIN_SLICE_BYTES = 2 * 1024;
 
 /** Line numbers above this are not a real location — the model hallucinated or ran digits together. */
 const MAX_LINE_NUMBER = 10_000_000;
-
-/** SPEC § Agent session loop — `claude-cli` silently ignores AI SDK tools, so refuse it. */
-export const CLAUDE_CLI_REFUSAL =
-  'provider "claude-cli" cannot run tool-using workflows: it does not execute AI SDK tools.\n' +
-  '  Use --provider anthropic (set ANTHROPIC_API_KEY), or the Claude Code native path (.claude/ commands).';
 
 /** Appended verbatim to the prompt for the single format retry (T08 step 5). */
 const RETRY_NOTE = 'Your previous output violated the format. Output only the required format.';
@@ -81,37 +86,6 @@ const EMPHASIS_RE = /^(\*\*|__|\*)(.+?)\1/;
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]+/g;
 
 const SEVERITY_ORDER: Record<Severity, number> = { BLOCKER: 0, MAJOR: 1, MINOR: 2, NIT: 3 };
-
-/**
- * Write straight to the fd: `process.exit()` can drop output that is still queued on a
- * pipe, and every message this module prints is either the result or the reason for an exit.
- */
-function write(fd: 1 | 2, line: string): void {
-  try {
-    fs.writeSync(fd, `${line}\n`);
-  } catch {
-    // A closed/blocked stdio stream must never mask the actual review outcome.
-  }
-}
-
-/** Progress + tool logging. Always stderr, so stdout stays parseable. */
-function log(line: string): void {
-  write(2, line);
-}
-
-/** Print to stderr and exit 1 — a workflow failure never surfaces a stack trace. */
-function fail(message: string): never {
-  write(2, message);
-  process.exit(1);
-}
-
-function truncate(value: string, limit = LOG_CAP): string {
-  return value.length <= limit ? value : `${value.slice(0, limit)}…[truncated]`;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
 
 /**
  * Remove control characters from text that is re-rendered to stdout. The model's output is
@@ -487,18 +461,6 @@ function timeoutMs(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
 }
 
-function describeModelFailure(err: unknown, provider: string): string {
-  const text = messageOf(err);
-  if (/ECONNREFUSED|fetch failed|Cannot connect to API/i.test(text) && provider === 'lmstudio') {
-    const base = process.env.LMSTUDIO_BASE_URL?.trim() || 'http://localhost:1234/v1';
-    return `LM Studio is not reachable at ${base}. Start LM Studio and enable the local server.`;
-  }
-  if (/abort|timed? ?out/i.test(text)) {
-    return `${provider} did not finish the review within ${timeoutMs() / 1000}s.`;
-  }
-  return text;
-}
-
 /**
  * T08 — `aw review`: diff a branch against its base and have the code-reviewer agent
  * judge it. Headless-safe: reads nothing from stdin, prints the contract format to stdout
@@ -619,7 +581,7 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
       });
     } catch (err) {
       // getModel() throws here for a missing API key; the SDK throws for transport failures.
-      return fail(describeModelFailure(err, provider));
+      return fail(describeModelFailure(err, provider, { activity: 'the review', timeoutMs: timeoutMs() }));
     }
     log(`model finished in ${result.steps.length} step(s)`);
     return result.text ?? '';

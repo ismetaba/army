@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { AwConfig } from '../../shared/schemas';
 import { slugify } from '../util';
+import { write } from '../workflows/common';
 
 /** Which browser context a tool call targets (SPEC § viewports). */
 export const BrowserViewport = z.enum(['mobile', 'desktop']);
@@ -17,6 +18,8 @@ export interface BrowserToolsOptions {
   screenshotDir: string;
   /** Pixel sizes for the `mobile` / `desktop` contexts. */
   viewports: Viewports;
+  /** Where warnings go; stderr by default, so stdout stays parseable. */
+  log?: (message: string) => void;
 }
 
 /** Every tool returns this instead of throwing (SPEC: tools never throw). */
@@ -125,10 +128,41 @@ function errorOf(err: unknown): ToolError {
   return { error: truncate(message.split('\n').slice(0, 6).join('\n')) };
 }
 
+/** Placeholder for a screen whose name slugifies to nothing — never an empty file name. */
+const FALLBACK_SCREEN = 'screen';
+
+/**
+ * Strip the viewport word a model already baked into the screen name.
+ *
+ * SPEC fixes the file name as `<screen>-<viewport>.png`, and the suffix is added here — so a
+ * `screen` that already ends in the viewport it is being shot at doubles it. Observed in the
+ * live design-loop run: `about-team-mobile` + mobile produced `about-team-mobile-mobile.png`.
+ *
+ * Only a TRAILING token equal to the viewport being appended is dropped, because that is the
+ * only token that can actually duplicate the suffix. Stripping viewport words wherever they sat
+ * collapsed distinct screens onto one file — `mobile-nav`, `desktop-nav` and `nav` all became
+ * `nav-<viewport>.png`, so a responsive-nav run shot four screenshots and kept two, silently.
+ * `about-team-desktop-after` keeps its inner `desktop`: an odd name beats a lost screenshot.
+ *
+ * It never returns an empty name — a screen called exactly "mobile" keeps its single token
+ * rather than becoming `-mobile.png`.
+ */
+export function normalizeScreenName(slug: string, viewport?: string): string {
+  const tokens = slug.split('-').filter(Boolean);
+  while (viewport !== undefined && tokens.length > 1 && tokens[tokens.length - 1] === viewport) {
+    tokens.pop();
+  }
+  return tokens.length > 0 ? tokens.join('-') : FALLBACK_SCREEN;
+}
+
+/** Longest file-name stem; a 300-character screen name would otherwise fail with ENAMETOOLONG. */
+const MAX_SCREEN_CHARS = 80;
+
 /**
  * `<screenshotDir>/<slugified screen>-<viewport>.png`.
  * A `screen` containing `/` becomes nested directories, each segment slugified, so a caller
- * can never escape `screenshotDir`.
+ * can never escape `screenshotDir`. Only the last segment — the file name — is normalised;
+ * a directory the agent chose to nest under keeps the name it was given.
  */
 export function screenshotPath(
   screenshotDir: string,
@@ -136,9 +170,51 @@ export function screenshotPath(
   viewport: BrowserViewport,
 ): string {
   const segments = screen.split('/').map(slugify).filter(Boolean);
-  if (segments.length === 0) segments.push('screen');
-  const file = `${segments.pop()}-${slugify(viewport)}.png`;
+  if (segments.length === 0) segments.push(FALLBACK_SCREEN);
+  const viewportSlug = slugify(viewport);
+  const stem = normalizeScreenName(segments.pop()!, viewportSlug)
+    .slice(0, MAX_SCREEN_CHARS)
+    .replace(/-$/, '');
+  const file = `${stem || FALLBACK_SCREEN}-${viewportSlug}.png`;
   return path.join(screenshotDir, ...segments, file);
+}
+
+/**
+ * Hands out one file per screen for the life of a session.
+ *
+ * `screenshotPath` alone is not enough: two different `screen` values can slugify to the same
+ * stem (`ログイン` and `!!!` both slugify to nothing), and the second write would then destroy
+ * the first screenshot while the tool still reported success — design-loop lists screenshots by
+ * scanning the directory, so nothing downstream would notice. A path already claimed by another
+ * screen therefore gets a `-2`, `-3`, … suffix (the rule T09 step 7 uses for report files) and a
+ * warning naming both screens. Re-shooting the SAME screen keeps its path and overwrites, which
+ * is the fix-and-re-check loop working as intended.
+ */
+export function makeScreenshotNamer(
+  screenshotDir: string,
+  log: (message: string) => void = (message) => write(2, message),
+) {
+  const claimed = new Map<string, string>();
+  return {
+    resolve(screen: string, viewport: BrowserViewport): string {
+      const base = screenshotPath(screenshotDir, screen, viewport);
+      const ext = path.extname(base);
+      const stem = base.slice(0, base.length - ext.length);
+      for (let n = 1; ; n += 1) {
+        const candidate = n === 1 ? base : `${stem}-${n}${ext}`;
+        const owner = claimed.get(candidate);
+        if (owner !== undefined && owner !== screen) continue;
+        if (candidate !== base) {
+          log(
+            `warning: screenshot name clash — screen "${screen}" resolves to ${base}, already ` +
+              `taken by screen "${claimed.get(base)}"; saving as ${candidate} instead`,
+          );
+        }
+        claimed.set(candidate, screen);
+        return candidate;
+      }
+    },
+  };
 }
 
 /**
@@ -148,6 +224,7 @@ export function screenshotPath(
  */
 export function makeBrowserActions(opts: BrowserToolsOptions) {
   const { screenshotDir, viewports } = opts;
+  const namer = makeScreenshotNamer(screenshotDir, opts.log);
 
   return {
     async goto(input: { url: string; viewport: BrowserViewport }): Promise<GotoResult> {
@@ -166,7 +243,7 @@ export function makeBrowserActions(opts: BrowserToolsOptions) {
     }): Promise<ScreenshotResult> {
       try {
         const { page } = await getSession(input.viewport, viewports);
-        const file = screenshotPath(screenshotDir, input.screen, input.viewport);
+        const file = namer.resolve(input.screen, input.viewport);
         await fs.mkdir(path.dirname(file), { recursive: true });
         await page.screenshot({ path: file, fullPage: true });
         return { path: file };
@@ -236,7 +313,11 @@ export function makeBrowserTools(opts: BrowserToolsOptions) {
       description:
         'Save a full-page PNG of a viewport to <screenshotDir>/<screen>-<viewport>.png and return the path.',
       inputSchema: z.object({
-        screen: z.string().describe('short name of the screen, e.g. "login"'),
+        screen: z
+          .string()
+          .describe(
+            'short name of the screen, e.g. "login" — never include the viewport, it is appended',
+          ),
         viewport,
       }),
       execute: (input): Promise<ScreenshotResult> => actions.screenshot(input),
