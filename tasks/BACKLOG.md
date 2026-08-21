@@ -104,3 +104,43 @@ before the previous one is done (parallelization noted where safe).
   Offer: (a) pre-push hook running headless review, blocking on BLOCKER; (b) design-loop
   video-recording variant.
   ✓ Offered to the developer; built only on request.
+
+## Phase 7 — Dashboard (web management panel)
+
+- [ ] **T16 — Run manifest + workspace store (retrofit T08–T10)**
+  Every workflow run writes a structured JSON manifest (run id, workspace, agent,
+  provider/model, timing, findings/cases/screens, artifact paths) under
+  `~/.agent-workflows/<workspace>/runs/` — outside the target repo, like agent-test-env's
+  `~/.agent-test-studio` pattern. A *workspace* = named target repo + its `aw.config.json`
+  + run history.
+  ✓ All three workflows produce a valid manifest readable by a schema test.
+
+- [ ] **T17 — Dashboard skeleton**
+  `dashboard/` Next.js app (localhost only): reads the store, workspace switcher, run list
+  with status/agent/provider filters, run detail routing.
+  ✓ Lists runs from ≥2 workspaces and opens a run detail page.
+
+- [ ] **T18 — Review UI (Bitbucket-like)**
+  Side-by-side/unified diff viewer with inline findings pinned to `file:line`, severity
+  badges + filters (BLOCKER/MAJOR/MINOR/NIT), verdict banner, copyable proposed fixes.
+  ✓ A T08 run's findings render inline on the correct diff lines.
+
+- [ ] **T19 — Test report UI**
+  PASS/FAIL case table, case detail with exact request/response, repro steps, severity;
+  history of reports per feature.
+  ✓ A T09 report renders fully; failures show request+response verbatim.
+
+- [ ] **T20 — Design gallery**
+  Screenshot grid per feature (viewport side-by-side, run-over-run comparison), video player
+  (T15b variant), feedback box that triggers `aw design-loop --iterate "<feedback>"`.
+  ✓ Screenshots of a T10 run display at both viewports; feedback round-trips to a new run.
+
+- [ ] **T21 — Workspace & agent settings management**
+  Workspace CRUD (attach repo path), per-agent provider/model editor writing
+  `aw.config.json`, guardrail/viewport settings, run-history housekeeping (delete/archive).
+  ✓ Provider change made in UI is picked up by the next CLI run.
+
+- [ ] **T22 — Trigger + live logs from UI**
+  Start any workflow from the dashboard (args form), stream live agent output (SSE),
+  cancel a running job.
+  ✓ A review run started in the UI streams logs and lands in the run list on finish.

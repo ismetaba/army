@@ -21,10 +21,20 @@ agent-workflows/
 ├── .claude/
 │   ├── commands/            # /design-loop /test-feature /review — reuse agents/*.md prompts
 │   └── agents/              # Claude Code subagents (native path)
+├── dashboard/               # Next.js web panel (Phase 7): review UI, reports, gallery, settings
 ├── CLAUDE.md                # conventions + guardrails (handoff Step 2)
 ├── docs/HANDOFF.md          # original brief
 └── tasks/BACKLOG.md         # sequential task list
 ```
+
+### Dashboard & workspaces (Phase 7)
+
+Runs write JSON manifests to `~/.agent-workflows/<workspace>/runs/` (outside target repos).
+A **workspace** binds one target repo to its config + run history, so many projects can be
+managed side by side. The localhost dashboard renders: Bitbucket-like diff review with inline
+`file:line` findings, test-report viewer (exact request/response per failure), design gallery
+(screenshots/videos per viewport, feedback box → `--iterate`), per-agent provider/model and
+guardrail settings, and workflow triggering with live logs (SSE).
 
 ### Provider selection (core requirement)
 
@@ -80,3 +90,5 @@ design/test runs end by presenting artifact paths, then **stop for feedback**.
 - **M2** (T05–T10): CLI workflows complete.
 - **M3** (T11–T12): Claude Code native layer complete.
 - **M4** (T13–T15): wired to a real project, handoff acceptance checks pass.
+- **M5** (T16–T22): dashboard — review UI, test reports, design gallery, workspace/settings
+  management, trigger + live logs.
