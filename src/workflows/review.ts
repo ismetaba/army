@@ -11,6 +11,7 @@ import {
   CLAUDE_CLI_REFUSAL,
   describeModelFailure,
   fail,
+  isContextOverflowError,
   log,
   messageOf,
   truncate,
@@ -43,6 +44,14 @@ const MAX_STEPS = 25;
 
 /** T08 step 3: the diff handed to the model is capped at 60 KB. */
 const MAX_DIFF_BYTES = 60 * 1024;
+
+/**
+ * Floor for the automatic shrink below: under this there is not enough diff left for a review
+ * worth printing, so the run fails with the provider's own explanation instead.
+ */
+const MIN_DIFF_BUDGET_BYTES = 2 * 1024;
+/** How many times the diff budget may be halved when the provider says the prompt is too long. */
+const MAX_DIFF_SHRINKS = 3;
 
 const EXEC_MAX_BUFFER = 64 * 1024 * 1024;
 
@@ -265,6 +274,39 @@ export function parseReviewOutput(raw: unknown): ParsedReview {
   return { ok: true, verdict, findings, warnings };
 }
 
+function kb(bytes: number): string {
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+/**
+ * The coverage note printed on STDOUT under the verdict, or `null` when the whole diff was sent.
+ *
+ * The capping and auto-shrinking warnings are stderr progress lines, and every documented
+ * headless usage (`claude -p`, `aw review > out.txt`, a pre-push hook) throws stderr away. A run
+ * that reviewed 4 of 11 files then printed a bare `VERDICT: APPROVE` and exited 0 is
+ * indistinguishable from a full review — so the part the verdict does NOT cover has to appear
+ * next to the verdict itself, on the same stream.
+ */
+export function coverageNote(args: {
+  files: readonly string[];
+  omitted: readonly string[];
+  truncated: readonly string[];
+  sentBytes: number;
+  fullBytes: number;
+}): string | null {
+  const { files, omitted, truncated, sentBytes, fullBytes } = args;
+  if (omitted.length === 0 && truncated.length === 0) return null;
+  const whole = files.length - omitted.length - truncated.length;
+  const lines = [
+    `REVIEWED: ${whole} of ${files.length} changed file(s) in full — ` +
+      `${kb(sentBytes)} of ${kb(fullBytes)} of the diff was sent to the model.`,
+  ];
+  if (truncated.length > 0) lines.push(`  cut short: ${truncated.join(', ')}`);
+  if (omitted.length > 0) lines.push(`  not sent: ${omitted.join(', ')}`);
+  lines.push('  The verdict above does not cover the files listed here.');
+  return lines.join('\n');
+}
+
 /** Re-render the contract format from parsed data, so stdout is exact even if the model drifted. */
 export function formatReview(verdict: Verdict, findings: readonly Finding[]): string {
   const out = [`VERDICT: ${verdict}`];
@@ -319,6 +361,31 @@ function gitStderr(err: unknown): string {
   return (e.stderr ?? '').trim() || messageOf(err);
 }
 
+/**
+ * Indices of the per-file diffs that fit whole in `maxBytes`, chosen smallest first (T14).
+ *
+ * Order matters only for *selection* — the diff is still emitted in file order. Filling the
+ * budget in `git diff --name-only` order means alphabetically early files win, and in the T14
+ * acceptance run that was 13 KB of generated `.claude/*.md` crowding out every `src/` file:
+ * the reviewer never saw `src/App.tsx` and reported a confident finding about a route handler
+ * that was in the part it had not been sent. Smallest-first maximises how many complete file
+ * diffs the model actually gets.
+ *
+ * The returned indices are ascending, so the caller can pack in place.
+ */
+export function fitWhole(sizes: readonly number[], maxBytes: number): number[] {
+  const order = sizes.map((_, i) => i).sort((a, b) => sizes[a]! - sizes[b]! || a - b);
+  const picked: number[] = [];
+  let used = 0;
+  for (const i of order) {
+    if (sizes[i]! <= maxBytes - used) {
+      picked.push(i);
+      used += sizes[i]!;
+    }
+  }
+  return picked.sort((a, b) => a - b);
+}
+
 interface CollectedDiff {
   text: string;
   /** Files whose diff is not in `text` at all. */
@@ -337,10 +404,15 @@ interface CollectedDiff {
  * being dropped. Dropping it (the previous behaviour) meant one 80 KB file could reduce the
  * reviewed material to a few hundred bytes while the workflow still returned a confident verdict.
  */
-async function collectDiff(repoRoot: string, base: string, files: string[]): Promise<CollectedDiff> {
+async function collectDiff(
+  repoRoot: string,
+  base: string,
+  files: string[],
+  maxBytes: number = MAX_DIFF_BYTES,
+): Promise<CollectedDiff> {
   const full = await git(repoRoot, ['diff', `${base}...HEAD`]);
   const fullBytes = byteLen(full);
-  if (fullBytes <= MAX_DIFF_BYTES) {
+  if (fullBytes <= maxBytes) {
     return { text: full, omitted: [], truncated: [], fullBytes };
   }
 
@@ -358,18 +430,16 @@ async function collectDiff(repoRoot: string, base: string, files: string[]): Pro
   const truncated: string[] = [];
   let used = 0;
 
-  // Pass 1: every diff that fits whole, in file order. Done before any truncation so that one
-  // oversized file cannot push the small files behind it out of the review.
-  chunks.forEach((chunk, i) => {
-    if (chunk.size <= MAX_DIFF_BYTES - used) {
-      packed[i] = chunk.text;
-      used += chunk.size;
-    }
-  });
+  // Pass 1: as many whole per-file diffs as the budget holds, smallest first. Done before any
+  // truncation so that one oversized file cannot push the small files behind it out of the review.
+  for (const i of fitWhole(chunks.map((c) => c.size), maxBytes)) {
+    packed[i] = chunks[i]!.text;
+    used += chunks[i]!.size;
+  }
   // Pass 2: spend whatever budget is left on head slices of the files that did not fit.
   chunks.forEach((chunk, i) => {
     if (packed[i] !== null) return;
-    const remaining = MAX_DIFF_BYTES - used;
+    const remaining = maxBytes - used;
     if (remaining < MIN_SLICE_BYTES) {
       omitted.push(chunk.file);
       return;
@@ -386,7 +456,7 @@ async function collectDiff(repoRoot: string, base: string, files: string[]): Pro
   // diff rather than nothing. Those files are truncated, not omitted.
   if (parts.length === 0) {
     return {
-      text: `${sliceBytes(full, MAX_DIFF_BYTES)}…[diff truncated]`,
+      text: `${sliceBytes(full, maxBytes)}…[diff truncated]`,
       omitted: [],
       truncated: [...files],
       fullBytes,
@@ -402,8 +472,9 @@ function buildPrompt(args: {
   diff: string;
   omitted: string[];
   truncated: string[];
+  maxBytes?: number;
 }): string {
-  const { repoRoot, base, files, diff, omitted, truncated } = args;
+  const { repoRoot, base, files, diff, omitted, truncated, maxBytes = MAX_DIFF_BYTES } = args;
   const parts = [
     `Repository: ${repoRoot}`,
     `Base ref: ${base} (the diff below is \`git diff ${base}...HEAD\`)`,
@@ -412,7 +483,7 @@ function buildPrompt(args: {
     ...files.map((f) => `- ${f}`),
   ];
   if (omitted.length > 0 || truncated.length > 0) {
-    parts.push('', `Diff capped at ${MAX_DIFF_BYTES / 1024} KB.`);
+    parts.push('', `Diff capped at ${Math.round(maxBytes / 1024)} KB.`);
   }
   if (truncated.length > 0) {
     parts.push(
@@ -534,32 +605,44 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
 
   const agent = loadAgent('code-reviewer');
   const tools = makeCoreTools('reviewer', repoRoot);
-  const prompt = buildPrompt({
+
+  /** Current diff budget; halved below when the provider says the prompt does not fit. */
+  let budget = MAX_DIFF_BYTES;
+  let prompt = buildPrompt({
     repoRoot,
     base,
     files,
     diff: diff.text,
     omitted: diff.omitted,
     truncated: diff.truncated,
+    maxBytes: budget,
   });
 
-  const sentBytes = byteLen(diff.text);
-  log(
-    `reviewing ${files.length} file(s) against ${base} — ${provider}/${model}, ` +
-      `${sentBytes} B of diff` +
-      (diff.fullBytes > sentBytes ? ` (of ${diff.fullBytes} B total)` : ''),
-  );
-  // A near-blind review must be visible to the caller, not hidden inside a byte count.
-  if (diff.truncated.length > 0) {
+  const announce = (): void => {
+    const sentBytes = byteLen(diff.text);
     log(
-      `warning: diff over ${MAX_DIFF_BYTES / 1024} KB — cut short: ${diff.truncated.join(', ')}`,
+      `reviewing ${files.length} file(s) against ${base} — ${provider}/${model}, ` +
+        `${sentBytes} B of diff` +
+        (diff.fullBytes > sentBytes ? ` (of ${diff.fullBytes} B total)` : ''),
     );
-  }
-  if (diff.omitted.length > 0) {
-    log(`warning: diff over ${MAX_DIFF_BYTES / 1024} KB — not sent: ${diff.omitted.join(', ')}`);
-  }
+    // A near-blind review must be visible to the caller, not hidden inside a byte count.
+    if (diff.truncated.length > 0) {
+      log(
+        `warning: diff over ${Math.round(budget / 1024)} KB — cut short: ${diff.truncated.join(', ')}`,
+      );
+    }
+    if (diff.omitted.length > 0) {
+      log(
+        `warning: diff over ${Math.round(budget / 1024)} KB — not sent: ${diff.omitted.join(', ')}`,
+      );
+    }
+  };
+  announce();
 
-  const ask = async (text: string): Promise<string> => {
+  /** One model call. Returns the error instead of exiting, so the caller can shrink and retry. */
+  const attempt = async (
+    text: string,
+  ): Promise<{ ok: true; text: string } | { ok: false; err: unknown }> => {
     let result: Awaited<ReturnType<typeof generateText>>;
     try {
       result = await generateText({
@@ -581,13 +664,70 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
       });
     } catch (err) {
       // getModel() throws here for a missing API key; the SDK throws for transport failures.
-      return fail(describeModelFailure(err, provider, { activity: 'the review', timeoutMs: timeoutMs() }));
+      return { ok: false, err };
     }
     log(`model finished in ${result.steps.length} step(s)`);
-    return result.text ?? '';
+    return { ok: true, text: result.text ?? '' };
   };
 
-  let raw = await ask(prompt);
+  /**
+   * Ask, and if the provider rejects the prompt as too long for its context, halve the diff
+   * budget and ask again (T14).
+   *
+   * A 60 KB cap is a cap, not a promise that the model can read 60 KB: LM Studio serving a
+   * 30B model with an 8192-token context answered this branch's 25 KB diff with a bare
+   * `400 Bad Request`, and the whole review was lost. Shrinking is strictly better than that —
+   * the prompt already tells the reviewer which files were cut short, and it has `read_file`
+   * and `git_diff` to fetch the rest itself.
+   */
+  const ask = async (suffix = ''): Promise<string> => {
+    for (let shrinks = 0; ; shrinks += 1) {
+      const result = await attempt(`${prompt}${suffix}`);
+      if (result.ok) return result.text;
+
+      const room = Math.min(budget, diff.fullBytes);
+      const canShrink =
+        isContextOverflowError(result.err) &&
+        shrinks < MAX_DIFF_SHRINKS &&
+        Math.floor(room / 2) >= MIN_DIFF_BUDGET_BYTES;
+      if (!canShrink) {
+        return fail(
+          describeModelFailure(result.err, provider, {
+            activity: 'the review',
+            timeoutMs: timeoutMs(),
+          }) +
+            (isContextOverflowError(result.err)
+              ? // The bytes actually sent, not the budget: the last attempt usually carries less
+                // than its cap, and quoting the cap overstates what the model was asked to read.
+                `\n  The diff does not fit this model's context even at ${byteLen(diff.text)} B.` +
+                '\n  Load the model with a larger context length, or review a narrower range with --base.'
+              : ''),
+        );
+      }
+      budget = Math.floor(room / 2);
+      log(
+        `warning: ${provider} rejected the prompt as too long for its context — ` +
+          `retrying with the diff capped at ${Math.round(budget / 1024)} KB`,
+      );
+      try {
+        diff = await collectDiff(repoRoot, base, files, budget);
+      } catch (err) {
+        return fail(`git diff ${base}...HEAD failed in ${repoRoot}: ${gitStderr(err)}`);
+      }
+      prompt = buildPrompt({
+        repoRoot,
+        base,
+        files,
+        diff: diff.text,
+        omitted: diff.omitted,
+        truncated: diff.truncated,
+        maxBytes: budget,
+      });
+      announce();
+    }
+  };
+
+  let raw = await ask();
   let parsed = parseReviewOutput(raw);
 
   // T08 step 5: exactly one format retry. "REQUEST CHANGES with nothing to change" counts as
@@ -607,7 +747,7 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
   if (firstProblem) {
     log(`raw model output:\n${raw}`);
     log(`format retry: ${firstProblem}`);
-    const retryRaw = await ask(`${prompt}\n\n${RETRY_NOTE}`);
+    const retryRaw = await ask(`\n\n${RETRY_NOTE}`);
     lastRaw = retryRaw;
     const retryParsed = parseReviewOutput(retryRaw);
     const retryProblem = unusable(retryParsed);
@@ -633,6 +773,19 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
     log('warning: verdict APPROVE overrides the reported BLOCKER — exit code stays 0');
   }
   console.log(formatReview(parsed.verdict, parsed.findings));
+
+  // On stdout, under the verdict: a partial review must not read like a complete one.
+  const coverage = coverageNote({
+    files,
+    omitted: diff.omitted,
+    truncated: diff.truncated,
+    sentBytes: byteLen(diff.text),
+    fullBytes: diff.fullBytes,
+  });
+  if (coverage) {
+    console.log('');
+    console.log(coverage);
+  }
 
   return { verdict: parsed.verdict, findings: parsed.findings, raw };
 }

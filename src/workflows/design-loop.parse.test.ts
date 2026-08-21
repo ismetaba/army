@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  buildNudgePrompt,
   buildPlanPrompt,
   buildSessionPrompt,
   checkpoint,
@@ -310,5 +311,36 @@ describe('buildSessionPrompt', () => {
     const prompt = buildSessionPrompt(base);
     expect(prompt).toContain('never start, restart or stop a server');
     expect(prompt).toContain('never run `git commit`');
+  });
+
+  it('ends with the ordered screenshot procedure, one browser_goto per viewport', () => {
+    const prompt = buildSessionPrompt(base);
+    expect(prompt).toContain('  1. browser_goto');
+    expect(prompt).toContain('  2. browser_screenshot {"screen":"<screen>","viewport":"mobile"}');
+    expect(prompt).toContain('  3. browser_goto {"url":"<the same URL>","viewport":"desktop"}');
+    expect(prompt).toContain('  4. browser_screenshot {"screen":"<screen>","viewport":"desktop"}');
+  });
+});
+
+describe('buildNudgePrompt', () => {
+  const base = {
+    frontendUrl: 'http://localhost:5173',
+    screenshotDir: '/tmp/repo/screenshots/add-an-about-page',
+    answer: 'Changed: src/pages/AboutPage.tsx',
+  };
+
+  it('asks only for the screenshots and forbids another implementation pass', () => {
+    const prompt = buildNudgePrompt(base);
+    expect(prompt).toContain('Do NOT edit any file now');
+    expect(prompt).toContain('http://localhost:5173');
+    expect(prompt).toContain('/tmp/repo/screenshots/add-an-about-page');
+    expect(prompt).toContain('  1. browser_goto');
+    expect(prompt).toContain('  3. browser_goto {"url":"<the same URL>","viewport":"desktop"}');
+    expect(prompt).toContain('Changed: src/pages/AboutPage.tsx');
+  });
+
+  it('omits the replay section when the session answered nothing', () => {
+    const prompt = buildNudgePrompt({ ...base, answer: '   ' });
+    expect(prompt).not.toContain('This is what you said you changed:');
   });
 });

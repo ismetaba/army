@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { registerDesignLoop } from './commands/design-loop';
+import { registerInit } from './commands/init';
 import { registerPing } from './commands/ping';
 import { registerReview } from './commands/review';
 import { registerTestFeature } from './commands/test-feature';
@@ -12,6 +13,6 @@ registerPing(program);
 registerReview(program);
 registerTestFeature(program);
 registerDesignLoop(program);
-// remaining subcommands are registered here by later tasks (T13)
+registerInit(program);
 
 program.parse();

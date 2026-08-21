@@ -53,6 +53,64 @@ export function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Longest provider response body quoted into an error message. */
+const MAX_RESPONSE_BODY_CHARS = 600;
+
+/**
+ * What an OpenAI-compatible server said in its error response, when it said anything.
+ *
+ * The AI SDK turns a 4xx into `AI_APICallError` whose `message` is the bare HTTP reason —
+ * "Bad Request" — while the server's own explanation sits in `responseBody`. Reporting only the
+ * reason phrase is what made the T14 review failure undiagnosable: LM Studio had said exactly
+ * what it disliked and none of it reached the user.
+ */
+export function providerDetail(err: unknown): string {
+  if (err === null || typeof err !== 'object') return '';
+  const e = err as { statusCode?: unknown; responseBody?: unknown };
+  const status = typeof e.statusCode === 'number' ? `HTTP ${e.statusCode}` : '';
+  let body = typeof e.responseBody === 'string' ? e.responseBody.trim() : '';
+  if (body) {
+    // The body is usually `{"error":"…"}`; the message alone reads better than the envelope.
+    try {
+      const parsed: unknown = JSON.parse(body);
+      const inner = (parsed as { error?: unknown })?.error;
+      const text =
+        typeof inner === 'string'
+          ? inner
+          : typeof (inner as { message?: unknown })?.message === 'string'
+            ? ((inner as { message: string }).message)
+            : '';
+      if (text) body = text;
+    } catch {
+      // Not JSON; quote it as it came.
+    }
+  }
+  // With the standard `{"error":{"message":…}}` envelope the AI SDK has already put that text in
+  // `err.message`, and repeating it verbatim under it just stutters — keep only the status then.
+  const detail = truncate(oneLine(body), MAX_RESPONSE_BODY_CHARS);
+  const alreadySaid = detail !== '' && oneLine(messageOf(err)).includes(detail);
+  const parts = [status, alreadySaid ? '' : detail].filter(Boolean);
+  return parts.length > 0 ? `\n  provider said: ${parts.join(' — ')}` : '';
+}
+
+/**
+ * True when the provider rejected the request because the prompt does not fit its context.
+ *
+ * Local servers say this in the response body, not in the HTTP reason phrase — LM Studio with an
+ * 8192-token context answers a 26 KB diff with `400` and "The number of tokens to keep from the
+ * initial prompt is greater than the context length". A caller that can send less (the reviewer
+ * can cap the diff harder) uses this to retry instead of giving up.
+ */
+export function isContextOverflowError(err: unknown): boolean {
+  const e = err as { statusCode?: unknown; responseBody?: unknown };
+  const status = typeof e?.statusCode === 'number' ? e.statusCode : 0;
+  if (status !== 0 && status !== 400 && status !== 413 && status !== 422) return false;
+  const text = `${messageOf(err)} ${typeof e?.responseBody === 'string' ? e.responseBody : ''}`;
+  return /context (?:length|window)|too many tokens|maximum context|prompt is too long|reduce the length/i.test(
+    text,
+  );
+}
+
 /**
  * Turn a provider/transport failure into a sentence that names the actual problem.
  *
@@ -73,7 +131,9 @@ export function describeModelFailure(
   if (/abort|timed? ?out/i.test(text)) {
     return `${provider} did not finish ${opts.activity} within ${opts.timeoutMs / 1000}s.`;
   }
-  return text;
+  // Anything else is the provider refusing the request: quote what it said, or the message is
+  // just "Bad Request" and the user has nothing to act on.
+  return `${text}${providerDetail(err)}`;
 }
 
 // ---------------------------------------------------------------------------

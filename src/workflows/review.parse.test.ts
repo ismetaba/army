@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatReview, parseReviewOutput } from './review';
+import { coverageNote, fitWhole, formatReview, parseReviewOutput } from './review';
 
 /** Every assertion below also proves the parser did not throw — it always returns a result. */
 function parse(raw: unknown) {
@@ -397,5 +397,63 @@ describe('formatReview → parseReviewOutput round trip', () => {
     expect(second.findings).toEqual(first.findings);
     expect(second.verdict).toBe(first.verdict);
     expect(second.warnings).toEqual([]);
+  });
+});
+
+describe('fitWhole', () => {
+  it('takes everything when the budget holds it', () => {
+    expect(fitWhole([100, 200, 300], 1000)).toEqual([0, 1, 2]);
+  });
+
+  it('prefers many small file diffs over one large one', () => {
+    // The T14 shape: three generated markdown files first, then the source files that are the
+    // point of the review. In file order the budget went to the markdown alone.
+    expect(fitWhole([4000, 4000, 4000, 900, 500, 400], 6000)).toEqual([0, 3, 4, 5]);
+  });
+
+  it('returns ascending indices so the diff stays in file order', () => {
+    // Chosen smallest-first (1, 3, 2), reported in file order.
+    expect(fitWhole([900, 100, 800, 200], 1200)).toEqual([1, 2, 3]);
+  });
+
+  it('takes nothing when even the smallest diff does not fit', () => {
+    expect(fitWhole([5000, 6000], 1000)).toEqual([]);
+  });
+});
+
+describe('coverageNote', () => {
+  const FILES = ['a.ts', 'b.ts', 'c.ts', 'd.ts'];
+
+  it('says nothing when the whole diff was sent', () => {
+    expect(
+      coverageNote({ files: FILES, omitted: [], truncated: [], sentBytes: 100, fullBytes: 100 }),
+    ).toBeNull();
+  });
+
+  it('names the files the verdict does not cover, on the caller-visible stream', () => {
+    const note = coverageNote({
+      files: FILES,
+      omitted: ['c.ts', 'd.ts'],
+      truncated: ['b.ts'],
+      sentBytes: 3 * 1024,
+      fullBytes: 26 * 1024,
+    });
+    expect(note).toContain('REVIEWED: 1 of 4 changed file(s) in full');
+    expect(note).toContain('3.0 KB of 26.0 KB');
+    expect(note).toContain('cut short: b.ts');
+    expect(note).toContain('not sent: c.ts, d.ts');
+    expect(note).toContain('does not cover');
+  });
+
+  it('reports a review that saw only truncated files', () => {
+    const note = coverageNote({
+      files: ['big.ts'],
+      omitted: [],
+      truncated: ['big.ts'],
+      sentBytes: 2048,
+      fullBytes: 80 * 1024,
+    });
+    expect(note).toContain('REVIEWED: 0 of 1 changed file(s) in full');
+    expect(note).not.toContain('not sent:');
   });
 });

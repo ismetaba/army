@@ -61,6 +61,18 @@ export interface DesignLoopResult {
 const MAX_STEPS = 60;
 
 /**
+ * The nudge only re-opens the browser: goto + screenshot + console errors for a handful of
+ * screens. A small cap is what stops it turning into a second implementation pass.
+ */
+const NUDGE_MAX_STEPS = 12;
+
+/**
+ * Slack allowed between a file's mtime and the session start before it counts as stale.
+ * Filesystem mtimes are coarser than a millisecond on some filesystems.
+ */
+const FRESH_SLACK_MS = 2_000;
+
+/**
  * Whole-session guard. 60 steps against a local model at 10–90 s each is ~90 min worst case,
  * so the default sits just above it. Override with `AW_DESIGN_TIMEOUT_MS`.
  */
@@ -459,7 +471,68 @@ export function buildSessionPrompt(args: {
     '- never ask questions; when a product decision is genuinely open, pick the option that',
     '  matches the existing app and record it as a judgment call.',
     '',
+    // Recency matters to a small local model: the T14 acceptance run read every file, edited two
+    // of them and then wrote its summary without ever opening the browser, because the screenshot
+    // rule sat in the middle of a long bullet list. The same rule as an ordered procedure, last,
+    // is what it actually follows.
+    'Before you write that summary, do this for EVERY screen you touched, in this order:',
+    '  1. browser_goto {"url":"<that screen\'s URL, hash route included>","viewport":"mobile"}',
+    '  2. browser_screenshot {"screen":"<screen>","viewport":"mobile"}',
+    '  3. browser_goto {"url":"<the same URL>","viewport":"desktop"}',
+    '  4. browser_screenshot {"screen":"<screen>","viewport":"desktop"}',
+    '  5. browser_console_errors for each of the two viewports',
+    'The two viewports are two separate browser windows: a screenshot of one you never navigated',
+    'is a blank page, and the tool refuses it. A summary written before those calls is a failed',
+    'run: there is nothing for the human to review.',
+    '',
     'Finish with exactly these three sections, as plain text:',
+    'Changed: <one line per file you edited or created>',
+    'Screenshots: <the paths browser_screenshot returned>',
+    'Judgment calls: <one bullet per call, or "none">',
+  );
+  return parts.join('\n');
+}
+
+/**
+ * The one nudge sent when a session produced no screenshot of its own (T14).
+ *
+ * Same shape as the single format retry in `review` and `test-feature`: the model is not asked
+ * to redo the work, only to finish the step it skipped. It keeps the browser tools — a screenshot
+ * needs them — plus the read-only core profile, and nothing else: with no write_file/edit_file/bash
+ * in its tool set the nudge *cannot* turn into a second implementation pass, and its step budget
+ * is NUDGE_MAX_STEPS rather than the session's. Its own summary is replayed back so it knows
+ * which screens it claims to have touched.
+ */
+export function buildNudgePrompt(args: {
+  frontendUrl: string;
+  screenshotDir: string;
+  answer: string;
+}): string {
+  const { frontendUrl, screenshotDir, answer } = args;
+  const parts = [
+    'You finished without taking a single screenshot, so nothing you did has been verified and',
+    'there is nothing for the human to review. Do NOT edit any file now and do NOT re-implement',
+    'anything: the code is already written. Take the screenshots.',
+    '',
+    `The app is running at ${frontendUrl}. Screenshots are saved under ${screenshotDir}.`,
+    '',
+    'For EVERY screen you touched, in this order:',
+    '  1. browser_goto {"url":"<that screen\'s URL, hash route included>","viewport":"mobile"}',
+    '  2. browser_screenshot {"screen":"<screen>","viewport":"mobile"}',
+    '  3. browser_goto {"url":"<the same URL>","viewport":"desktop"}',
+    '  4. browser_screenshot {"screen":"<screen>","viewport":"desktop"}',
+    '  5. browser_console_errors for each of the two viewports',
+    'The two viewports are two separate browser windows: each needs its own browser_goto, or the',
+    'screenshot is a blank page and the tool refuses it.',
+    '`screen` is a bare name ("about"), never a path and never a ".png" — the viewport is',
+    'appended for you.',
+  ];
+  if (answer.trim()) {
+    parts.push('', 'This is what you said you changed:', truncate(answer.trim(), 4 * 1024));
+  }
+  parts.push(
+    '',
+    'Then finish with exactly these three sections, as plain text:',
     'Changed: <one line per file you edited or created>',
     'Screenshots: <the paths browser_screenshot returned>',
     'Judgment calls: <one bullet per call, or "none">',
@@ -595,15 +668,26 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
 
   // --- the session -----------------------------------------------------------
   const agent = loadAgent('ui-designer');
+  const browserTools = makeBrowserTools({ screenshotDir, viewports: cfg.viewports });
   const tools: ToolSet = {
     ...makeCoreTools('designer', repoRoot),
-    ...makeBrowserTools({ screenshotDir, viewports: cfg.viewports }),
+    ...browserTools,
+  };
+  /**
+   * The nudge's tool set: the same browser tools (same screenshot namer, so a re-shot screen
+   * keeps its file) plus the read-only core profile. No write_file/edit_file/bash, so "do not
+   * edit anything now" is enforced by the tool list rather than by a sentence in the prompt.
+   */
+  const nudgeTools: ToolSet = {
+    ...makeCoreTools('reviewer', repoRoot),
+    ...browserTools,
   };
 
   const ask = async (
     prompt: string,
-    withTools: boolean,
+    withTools: ToolSet | undefined,
     limitMs: number,
+    maxSteps: number = MAX_STEPS,
   ): Promise<{ text: string; steps: number }> => {
     let result: Awaited<ReturnType<typeof generateText>>;
     try {
@@ -611,8 +695,8 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
         model: getModel(provider, model),
         system: agent.system,
         prompt,
-        tools: withTools ? tools : undefined,
-        stopWhen: withTools ? [stepCountIs(MAX_STEPS), isLooping] : stepCountIs(1),
+        tools: withTools,
+        stopWhen: withTools ? [stepCountIs(maxSteps), isLooping] : stepCountIs(1),
         maxRetries: 1,
         abortSignal: AbortSignal.timeout(limitMs),
         onStepEnd: (step) => {
@@ -652,7 +736,7 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
   );
   const files = await listFrontendFiles(repoRoot);
   const planPrompt = buildPlanPrompt({ description, specPath, iterate, files, frontendUrl });
-  const planned = await ask(planPrompt, false, PLAN_TIMEOUT_MS);
+  const planned = await ask(planPrompt, undefined, PLAN_TIMEOUT_MS);
   const plan = limitPlan(planned.text);
   // The plan is a result, not progress: it goes to stdout, and the run continues without waiting.
   write(1, 'PLAN:');
@@ -672,27 +756,62 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
   });
   const startedAtMs = Date.now();
   log(`session: implementing and verifying at ${frontendUrl} (up to ${MAX_STEPS} steps)`);
-  const session = await ask(sessionPrompt, true, timeoutMs());
+  let session = await ask(sessionPrompt, tools, timeoutMs());
   log(`model finished in ${session.steps} step(s)`);
   if (session.steps >= MAX_STEPS) {
     log(`warning: the agent used its whole ${MAX_STEPS}-step budget without finishing`);
   }
 
   // --- screenshots (T10 step 6) ----------------------------------------------
-  const shots = findScreenshots(screenshotDir);
+  const isFresh = (s: { mtimeMs: number }): boolean => s.mtimeMs >= startedAtMs - FRESH_SLACK_MS;
+  let shots = findScreenshots(screenshotDir);
+  // Freshness, not existence, is what the nudge is for. `--iterate` reuses the slug, so the
+  // directory already holds the first pass's PNGs: gating on `shots.length === 0` meant the
+  // nudge could never fire on the one run whose evidence actually failed in T14, and the
+  // previous pass's screenshots were presented as verification of the revision.
+  if (shots.filter(isFresh).length === 0) {
+    // One nudge before giving up. Observed in the T14 acceptance run: the model read the repo,
+    // wrote the page, edited the router — and then summarised without ever opening the browser.
+    // The work is on disk and correct; only the verification step was skipped, and re-running
+    // the whole workflow would re-implement code that already exists.
+    log(
+      `warning: the session produced no new screenshot${shots.length > 0 ? ' (only PNGs from an earlier run)' : ''}` +
+        ' — asking the agent once to verify in the browser',
+    );
+    const nudge = await ask(
+      buildNudgePrompt({ frontendUrl, screenshotDir, answer: session.text }),
+      nudgeTools,
+      timeoutMs(),
+      NUDGE_MAX_STEPS,
+    );
+    log(`nudge finished in ${nudge.steps} step(s)`);
+    session = {
+      // Both answers are kept: the first names the changed files, the second the screenshots,
+      // and `extractJudgmentCalls` reads whichever of the two reported them.
+      text: [session.text, nudge.text].filter(Boolean).join('\n\n'),
+      steps: session.steps + nudge.steps,
+    };
+    shots = findScreenshots(screenshotDir);
+  }
   if (shots.length === 0) {
     // Not a warning: an unverified UI change is exactly what this workflow exists to prevent.
     await bail(`${NO_SCREENSHOTS}\n  expected at least one PNG under ${screenshotDir}`);
   }
-  // Filesystem mtimes are coarser than ms on some filesystems; allow a small slack so a shot
-  // taken in the first moments of the session is not misreported as stale.
-  const fresh = shots.filter((s) => s.mtimeMs >= startedAtMs - 2_000);
-  if (fresh.length === 0) {
+  const stale = shots.filter((s) => !isFresh(s));
+  if (stale.length === shots.length) {
     log(
       `warning: every PNG under ${screenshotDir} predates this session — the agent presented ` +
         'screenshots from an earlier run',
     );
+  } else if (stale.length > 0) {
+    // Per file, not only when ALL are stale: an iteration that re-shot two of eight screens was
+    // still presenting the other six as evidence for changes they never showed.
+    log(
+      `warning: ${stale.length} of ${shots.length} screenshot(s) predate this session and are ` +
+        `marked stale below: ${stale.map((s) => s.path).join(', ')}`,
+    );
   }
+  const staleSet = new Set(stale.map((s) => s.path));
   const empty = shots.filter((s) => s.bytes === 0);
   if (empty.length > 0) {
     log(`warning: ${empty.length} screenshot(s) are 0 bytes: ${empty.map((s) => s.path).join(', ')}`);
@@ -719,7 +838,11 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
   else write(1, '  (none — the working tree was already clean)');
   write(1, '');
   write(1, 'SCREENSHOTS:');
-  for (const shot of shots) write(1, `  ${shot.path}`);
+  for (const shot of shots) {
+    // The label is on stdout with the path: a stale PNG presented unmarked is evidence for a
+    // change it does not show.
+    write(1, `  ${shot.path}${staleSet.has(shot.path) ? '  (stale — not taken in this run)' : ''}`);
+  }
   write(1, '');
   write(1, 'JUDGMENT CALLS:');
   if (judgmentCalls.length > 0) for (const call of judgmentCalls) write(1, `  - ${call}`);

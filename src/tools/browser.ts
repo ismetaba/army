@@ -217,6 +217,36 @@ export function makeScreenshotNamer(
   };
 }
 
+/** A page that has never navigated: Playwright reports `about:blank`, some builds `''`. */
+export function isBlankPage(url: string): boolean {
+  const value = url.trim();
+  return value === '' || value === 'about:blank';
+}
+
+/**
+ * The refusal a screenshot of a viewport with no successful navigation gets (T14).
+ *
+ * Each viewport is its own browser context, so `browser_goto` on `mobile` leaves `desktop` at
+ * `about:blank`. Observed in the T14 acceptance run: the agent navigated once, then took the
+ * mobile *and* desktop screenshots of "the same screen" — and the desktop PNG was a blank white
+ * page that the workflow went on to present as verification of the change. Silent blank evidence
+ * is the one outcome this workflow exists to prevent, so the tool refuses and says exactly which
+ * call is missing; the agent still has steps left to make it.
+ *
+ * The same refusal covers a `browser_goto` that FAILED (dev server not up yet, wrong port): the
+ * URL check alone does not, because Chromium leaves `page.url()` set to the URL it could not
+ * load while the page itself is blank.
+ */
+export function blankViewportError(viewport: BrowserViewport, lastUrl: string): ToolError {
+  return {
+    error:
+      `viewport "${viewport}" has not been navigated successfully yet — a screenshot of it would ` +
+      `be a blank page. Call browser_goto {"url":"${lastUrl || '<the URL of that screen>'}","viewport":"${viewport}"} ` +
+      'first (and check it returned a url/title, not an error), then take the screenshot again. ' +
+      'Every viewport is a separate browser window and must be navigated on its own.',
+  };
+}
+
 /**
  * The bodies behind the tools, as plainly-typed async functions.
  * `makeBrowserTools` wraps these; scripts (and later workflows) can call them directly
@@ -225,14 +255,27 @@ export function makeScreenshotNamer(
 export function makeBrowserActions(opts: BrowserToolsOptions) {
   const { screenshotDir, viewports } = opts;
   const namer = makeScreenshotNamer(screenshotDir, opts.log);
+  /** Last URL any viewport reached, so the refusal above can name the call to make. */
+  let lastUrl = '';
+  /**
+   * Viewports whose most recent `browser_goto` succeeded — tracked, never inferred from
+   * `page.url()`. A refused/timed-out navigation leaves Chromium showing a blank page while
+   * `page.url()` reports the URL it failed to load, so the URL alone cannot tell the two apart
+   * and a blank PNG would be written and presented as verification.
+   */
+  const navigated = new Set<BrowserViewport>();
 
   return {
     async goto(input: { url: string; viewport: BrowserViewport }): Promise<GotoResult> {
       try {
         const { page } = await getSession(input.viewport, viewports);
         await page.goto(input.url, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT_MS });
+        lastUrl = page.url();
+        navigated.add(input.viewport);
         return { url: page.url(), title: await page.title() };
       } catch (err) {
+        // A failed navigation invalidates whatever was on screen before it.
+        navigated.delete(input.viewport);
         return errorOf(err);
       }
     },
@@ -243,6 +286,11 @@ export function makeBrowserActions(opts: BrowserToolsOptions) {
     }): Promise<ScreenshotResult> {
       try {
         const { page } = await getSession(input.viewport, viewports);
+        // Before the name is claimed: a refused screenshot must not burn the file name its
+        // retry will need.
+        if (!navigated.has(input.viewport) || isBlankPage(page.url())) {
+          return blankViewportError(input.viewport, lastUrl);
+        }
         const file = namer.resolve(input.screen, input.viewport);
         await fs.mkdir(path.dirname(file), { recursive: true });
         await page.screenshot({ path: file, fullPage: true });
@@ -311,7 +359,9 @@ export function makeBrowserTools(opts: BrowserToolsOptions) {
 
     browser_screenshot: tool({
       description:
-        'Save a full-page PNG of a viewport to <screenshotDir>/<screen>-<viewport>.png and return the path.',
+        'Save a full-page PNG of a viewport to <screenshotDir>/<screen>-<viewport>.png and return the path. ' +
+        'The viewport must have been opened with browser_goto first — each viewport is a separate ' +
+        'browser window, so shooting one you only navigated in the other viewport is refused.',
       inputSchema: z.object({
         screen: z
           .string()

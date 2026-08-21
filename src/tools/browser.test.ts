@@ -1,6 +1,12 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { makeScreenshotNamer, normalizeScreenName, screenshotPath } from './browser';
+import {
+  blankViewportError,
+  isBlankPage,
+  makeScreenshotNamer,
+  normalizeScreenName,
+  screenshotPath,
+} from './browser';
 
 const DIR = '/repo/screenshots/add-a-placeholder-about-team-page-with';
 
@@ -139,5 +145,32 @@ describe('makeScreenshotNamer', () => {
     ]);
     expect(new Set(files).size).toBe(4);
     expect(warnings).toEqual([]);
+  });
+});
+
+describe('isBlankPage', () => {
+  it('recognises a page that has never navigated', () => {
+    expect(isBlankPage('about:blank')).toBe(true);
+    expect(isBlankPage('')).toBe(true);
+    expect(isBlankPage('   ')).toBe(true);
+  });
+
+  it('leaves a real URL alone', () => {
+    expect(isBlankPage('http://localhost:5173/#/placeholder')).toBe(false);
+  });
+});
+
+describe('blankViewportError', () => {
+  it('names the exact browser_goto the agent skipped', () => {
+    const { error } = blankViewportError('desktop', 'http://localhost:5173/#/placeholder');
+    expect(error).toContain(
+      'browser_goto {"url":"http://localhost:5173/#/placeholder","viewport":"desktop"}',
+    );
+    expect(error).toContain('blank');
+  });
+
+  it('still explains itself when no URL has been visited yet', () => {
+    const { error } = blankViewportError('mobile', '');
+    expect(error).toContain('"url":"<the URL of that screen>"');
   });
 });

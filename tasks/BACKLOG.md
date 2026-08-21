@@ -41,8 +41,8 @@ Paste this (fill `T##`):
 - [x] [T12](T12.md) — Headless `claude -p "/review"` verification (or documented fallback)
 
 ## Phase 6 — Real project + acceptance
-- [ ] [T13](T13.md) — `aw init` workspace onboarding
-- [ ] [T14](T14.md) — Wire to the real project + handoff acceptance checks
+- [x] [T13](T13.md) — `aw init` workspace onboarding
+- [x] [T14](T14.md) — Wire to the real project + handoff acceptance checks
 - [ ] [T15](T15.md) — Offers: pre-push hook, video variant (present only)
 
 ## Phase 7 — Dashboard (web management panel)
