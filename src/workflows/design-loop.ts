@@ -4,21 +4,24 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { generateText, stepCountIs } from 'ai';
 import type { ToolSet } from 'ai';
-import type { AwConfig } from '../../shared/schemas';
+import type { AwConfig, ProviderId, ScreenShot } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
 import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
 import { closeBrowser, makeBrowserTools } from '../tools/browser';
 import { ensureUp, slugify, type EnsureUpHandle } from '../util';
+import { listRuns, startRun, type RunHandle } from '../store';
 import {
   CLAUDE_CLI_REFUSAL,
   clean,
   describeModelFailure,
   fail,
+  formatArgs,
   log,
   messageOf,
   oneLine,
+  setLogSink,
   truncate,
   write,
 } from './common';
@@ -292,6 +295,33 @@ export function findScreenshots(dir: string): FoundScreenshot[] {
     }
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Copy one screenshot into `artifacts/screenshots/` and describe it for the manifest.
+ *
+ * `browser_screenshot` names files `<screen>-<viewport>.png` (src/tools/browser.ts), so the
+ * viewport is read back off the name; a stray PNG that does not follow the convention keeps its
+ * whole name as the screen and is recorded as `desktop` rather than being dropped.
+ *
+ * `null` when the file could not be read: every `design.screens[].path` must be a path RELATIVE
+ * to the run directory (T16 step 2) — that is what the dashboard's artifact route resolves, and
+ * it rejects absolute paths outright. Recording the original's absolute path instead would put a
+ * link in the panel that can never resolve; the warning in `log.txt` keeps where it actually is.
+ */
+function copyScreenshot(run: RunHandle, screenshotDir: string, file: string): ScreenShot | null {
+  const rel = path.relative(screenshotDir, file).split(path.sep).join('/');
+  const match = /^(.*)-(mobile|desktop)\.png$/i.exec(rel);
+  const screen = (match ? match[1]! : rel.replace(/\.png$/i, '')) || 'screen';
+  const viewport = match?.[2]?.toLowerCase() === 'mobile' ? 'mobile' : 'desktop';
+  let bytes: Buffer;
+  try {
+    bytes = fs.readFileSync(file);
+  } catch (err) {
+    log(`warning: could not copy ${file} into the run: ${messageOf(err)} (it stays at ${file})`);
+    return null;
+  }
+  return { screen, viewport, path: run.artifact(`screenshots/${rel}`, bytes) };
 }
 
 // ---------------------------------------------------------------------------
@@ -609,6 +639,110 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
     );
   }
 
+  // T16: from here on the run is recorded. An `--iterate` run carries the feedback of every
+  // earlier pass over the same feature, so run N shows all N-1 things the human asked for, not
+  // just the latest one — that history is the whole point of a loop. A run started WITHOUT
+  // `--iterate` is a first pass and records an empty history: it received no feedback, and
+  // inheriting the previous chain would credit this run with requests it never saw.
+  const feedbackHistory = iterate ? [...priorFeedback(cfg.workspace, featureArg), iterate] : [];
+  const run = startRun({
+    workspace: cfg.workspace,
+    kind: 'design-loop',
+    agent: 'ui-designer',
+    provider,
+    model,
+    input: {
+      args: formatArgs('design-loop', [featureArg], {
+        iterate,
+        provider: opts.provider,
+        model: opts.model,
+        config: opts.config,
+        workspace: opts.workspace,
+      }),
+      feature: featureArg,
+      targetUrl: frontendUrl,
+    },
+  });
+  // Recorded before the session, not after it: a run that dies still has to hand the feedback
+  // it was given to the next `--iterate`, or the chain breaks at the first failure.
+  if (iterate) run.update({ design: { screens: [], judgmentCalls: [], feedbackHistory } });
+  setLogSink(run.log);
+  try {
+    const result = await designSession({
+      run,
+      cfg,
+      provider,
+      model,
+      repoRoot,
+      featureArg,
+      description,
+      specPath,
+      iterate,
+      slug,
+      screenshotDir,
+      frontendUrl,
+      feedbackHistory,
+    });
+    run.finish('done');
+    return result;
+  } catch (err) {
+    // A throw from inside the session still ends the run. `fail()`/`bail()` never reach here —
+    // they exit the process, and the store's exit guard records those as `error` too.
+    run.finish('error', { error: messageOf(err) });
+    throw err;
+  } finally {
+    setLogSink(null);
+  }
+}
+
+/**
+ * The `--iterate` texts of every earlier run over the same feature, oldest first.
+ *
+ * Matched on the feature argument, which is what identifies "the same design loop" from the
+ * CLI's point of view: `aw design-loop "<feature>" --iterate "<feedback>"` is a follow-up to
+ * `aw design-loop "<feature>"`. A corrupt or foreign manifest is skipped by `listRuns`.
+ */
+function priorFeedback(workspace: string, featureArg: string): string[] {
+  const feature = featureArg.trim();
+  const runs = listRuns(workspace)
+    .filter((r) => r.kind === 'design-loop' && (r.input.feature ?? '').trim() === feature)
+    .filter((r) => (r.design?.feedbackHistory?.length ?? 0) > 0);
+  // `listRuns` is newest first, so the newest run already carries the whole chain.
+  return runs[0]?.design?.feedbackHistory ?? [];
+}
+
+/** The design session itself, once the run exists. Split out purely so the caller can wrap it. */
+async function designSession(ctx: {
+  run: RunHandle;
+  cfg: AwConfig;
+  provider: ProviderId;
+  model: string;
+  repoRoot: string;
+  featureArg: string;
+  description: string;
+  specPath?: string;
+  iterate?: string;
+  slug: string;
+  screenshotDir: string;
+  frontendUrl: string;
+  feedbackHistory: string[];
+}): Promise<DesignLoopResult> {
+  const {
+    run,
+    cfg,
+    provider,
+    model,
+    repoRoot,
+    featureArg,
+    description,
+    specPath,
+    iterate,
+    slug,
+    screenshotDir,
+    frontendUrl,
+    feedbackHistory,
+  } = ctx;
+
   // --- start the app (T10 step 3) --------------------------------------------
   const handles: EnsureUpHandle[] = [];
   /** Stop only what this run started; a server the developer already had running is left alone. */
@@ -656,6 +790,7 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
   };
 
   const backend = cfg.app?.backend;
+  const frontend = cfg.app?.frontend;
   if (backend) {
     const backendBase = cfg.app?.baseUrl?.trim() || `http://localhost:${backend.port}`;
     await start('backend', joinUrl(backendBase, backend.healthPath ?? '/'), backend.start);
@@ -833,6 +968,19 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
 
   // --- present and stop (T10 step 8) -----------------------------------------
   const judgmentCalls = extractJudgmentCalls(session.text);
+  // T16: the PNGs are COPIED into the run (T10 step 6 keeps the originals in the target repo,
+  // where the next `--iterate` pass overwrites them). Without the copy, run N's manifest would
+  // point at pixels that run N+1 has already replaced, and a run-over-run compare would show
+  // the same two images twice.
+  run.update({
+    design: {
+      screens: shots
+        .map((shot) => copyScreenshot(run, screenshotDir, shot.path))
+        .filter((s): s is ScreenShot => s !== null),
+      judgmentCalls,
+      feedbackHistory,
+    },
+  });
   write(1, 'CHANGED FILES:');
   if (result.files.length > 0) for (const f of result.files) write(1, `  ${f}`);
   else write(1, '  (none — the working tree was already clean)');

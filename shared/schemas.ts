@@ -51,6 +51,7 @@ export type TestCase = z.infer<typeof TestCase>;
 export const ScreenShot = z.object({
   screen: z.string(), viewport: z.enum(['mobile', 'desktop']), path: z.string(),
 });
+export type ScreenShot = z.infer<typeof ScreenShot>;
 
 export const RunManifest = z.object({
   runId: z.string(),                            // "<kind>-<YYYYMMDD-HHmmss>"
@@ -76,4 +77,6 @@ export const RunManifest = z.object({
 export type RunManifest = z.infer<typeof RunManifest>;
 
 export const Workspace = z.object({ name: z.string(), repoRoot: z.string(), createdAt: z.string() });
+export type Workspace = z.infer<typeof Workspace>;
 export const WorkspacesFile = z.object({ workspaces: z.array(Workspace) });
+export type WorkspacesFile = z.infer<typeof WorkspacesFile>;

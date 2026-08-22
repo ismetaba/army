@@ -4,21 +4,24 @@ import path from 'node:path';
 import { generateText, stepCountIs } from 'ai';
 import type { ToolSet } from 'ai';
 import { TestCase } from '../../shared/schemas';
-import type { AwConfig, Severity } from '../../shared/schemas';
+import type { AwConfig, ProviderId, Severity } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
 import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
 import { closeBrowser, makeBrowserTools } from '../tools/browser';
 import { ensureUp, isLocalUrl, probeUrl, slugify, type EnsureUpHandle } from '../util';
+import { startRun, type RunHandle } from '../store';
 import {
   CLAUDE_CLI_REFUSAL,
   clean,
   describeModelFailure,
   fail,
+  formatArgs,
   log,
   messageOf,
   oneLine,
+  setLogSink,
   truncate,
   write,
 } from './common';
@@ -1250,6 +1253,73 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
     log(`non-local target allowed: it matches app.stagingUrl (${staging})`);
   }
 
+  // T16: from here on the run is recorded — the target is settled, so the manifest can name it,
+  // and every remaining failure (an app that will not start, a model that will not answer) is a
+  // run that happened and has to leave a trail.
+  const run = startRun({
+    workspace: cfg.workspace,
+    kind: 'test-feature',
+    agent: 'qa-tester',
+    provider,
+    model,
+    input: {
+      args: formatArgs('test-feature', [desc], {
+        url: opts.url,
+        'allow-destructive': opts.allowDestructive === true,
+        provider: opts.provider,
+        model: opts.model,
+        config: opts.config,
+        workspace: opts.workspace,
+      }),
+      feature: desc,
+      targetUrl: target,
+    },
+  });
+  setLogSink(run.log);
+  try {
+    const result = await testFeatureSession({
+      run,
+      opts,
+      cfg,
+      provider,
+      model,
+      repoRoot,
+      desc,
+      target,
+      targetUrl,
+      local,
+      startedAt,
+    });
+    run.finish('done');
+    return result;
+  } catch (err) {
+    // A throw from inside the session still ends the run. `fail()`/`bail()` never reach here —
+    // they exit the process, and the store's exit guard records those as `error` too.
+    run.finish('error', { error: messageOf(err) });
+    throw err;
+  } finally {
+    setLogSink(null);
+  }
+}
+
+/** The test session itself, once the run exists. Split out purely so the caller can wrap it. */
+async function testFeatureSession(ctx: {
+  run: RunHandle;
+  opts: TestFeatureOptions;
+  cfg: AwConfig;
+  provider: ProviderId;
+  model: string;
+  repoRoot: string;
+  desc: string;
+  target: string;
+  targetUrl: URL;
+  local: boolean;
+  startedAt: Date;
+}): Promise<TestFeatureResult> {
+  const { run, opts, cfg, provider, model, repoRoot, desc, target, targetUrl, local, startedAt } =
+    ctx;
+  const backend = cfg.app?.backend;
+
   // --- reachability / auto-start (T09 step 3) --------------------------------
   const healthUrl = joinUrl(target, backend?.healthPath ?? '/');
   let handle: EnsureUpHandle | undefined;
@@ -1458,29 +1528,39 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
 
   const reportDir = path.join(repoRoot, 'test-reports');
   let reportPath: string;
+  // Rendered into a local first, because the same text is written twice: into the target repo
+  // (T09 step 7) and into the run's artifacts (T16).
+  let report: string;
   try {
+    report = renderReport({
+      desc,
+      target,
+      provider,
+      model,
+      plan: planText,
+      planSource,
+      cases: parsed.cases,
+      rejected: parsed.rejected,
+      summary,
+      warnings: parsed.warnings,
+      startedAt,
+      autoStarted: handle?.started ? handle.command : undefined,
+    });
     reportPath = createReportFile(reportDir, desc, localDate(startedAt));
-    fs.writeFileSync(
-      reportPath,
-      renderReport({
-        desc,
-        target,
-        provider,
-        model,
-        plan: planText,
-        planSource,
-        cases: parsed.cases,
-        rejected: parsed.rejected,
-        summary,
-        warnings: parsed.warnings,
-        startedAt,
-        autoStarted: handle?.started ? handle.command : undefined,
-      }),
-      'utf8',
-    );
+    fs.writeFileSync(reportPath, report, 'utf8');
   } catch (err) {
     return bail(`cannot write the report into ${reportDir}: ${messageOf(err)}`);
   }
+
+  // T16: the report is copied into the run, not moved — the target repo keeps its own
+  // `test-reports/` file (T09 step 7), and the run stays readable after the repo moves on.
+  run.update({
+    test: {
+      reportArtifact: run.artifact('report.md', report),
+      cases: parsed.cases,
+      summary,
+    },
+  });
 
   await cleanup();
 

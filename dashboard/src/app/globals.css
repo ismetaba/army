@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+/*
+ * Theme approach (one approach, used consistently — T17 requirement):
+ *
+ *   Every colour in the panel is a CSS variable on `:root`, and the ONLY place dark mode exists
+ *   is the `prefers-color-scheme` block below. There is no theme toggle and no `dark:` variant
+ *   anywhere in the components — a component that wrote `bg-white dark:bg-zinc-900` would be one
+ *   more pair of colours to keep in sync, and the pair that got forgotten is exactly how a local
+ *   tool ends up unreadable at night. Add a colour here, in both blocks, or not at all.
+ *
+ * `color-scheme` is set too, so scrollbars, form controls and the canvas the browser paints
+ * behind the page follow along.
+ */
+:root {
+  color-scheme: light;
+
+  --bg: #f6f6f7;
+  --surface: #ffffff;
+  --surface-2: #f1f1f3;
+  --line: #e0e0e4;
+  --fg: #17171a;
+  --muted: #6c6c78;
+  --link: #2450c8;
+
+  /* status: running=blue, done=green, error=red, cancelled=gray (T17 step 4) */
+  --running-fg: #14449c;
+  --running-bg: #dbe7fd;
+  --done-fg: #14663a;
+  --done-bg: #d6f3e2;
+  --error-fg: #9c1c1c;
+  --error-bg: #fbdfdf;
+  --cancelled-fg: #4c4c56;
+  --cancelled-bg: #e4e4e8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #0c0c0f;
+    --surface: #16161a;
+    --surface-2: #1e1e24;
+    --line: #2c2c34;
+    --fg: #ececf1;
+    --muted: #9a9aa8;
+    --link: #86aaf7;
+
+    --running-fg: #a9c8ff;
+    --running-bg: #17284a;
+    --done-fg: #8ee0ae;
+    --done-bg: #123424;
+    --error-fg: #ffa9a9;
+    --error-bg: #3d1a1a;
+    --cancelled-fg: #b9b9c6;
+    --cancelled-bg: #26262e;
+  }
+}
+
+/* `inline` keeps the utilities pointing at the live variable, so the media query above swaps
+   every Tailwind colour utility at once instead of baking today's value into the class. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-link: var(--link);
+
+  --color-running-fg: var(--running-fg);
+  --color-running-bg: var(--running-bg);
+  --color-done-fg: var(--done-fg);
+  --color-done-bg: var(--done-bg);
+  --color-error-fg: var(--error-fg);
+  --color-error-bg: var(--error-bg);
+  --color-cancelled-fg: var(--cancelled-fg);
+  --color-cancelled-bg: var(--cancelled-bg);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+}
+
+/*
+ * NOTE: there is deliberately no `overflow-x: hidden` on <html> here. It would make the "does
+ * the page scroll sideways" check pass while the content was simply clipped off-screen. Wide
+ * things (the run table, the log, artifact paths) each scroll or wrap inside their own box —
+ * `overflow-x-auto` on the wrapper, `min-w-0` on the flex child, `break-all` on long literals —
+ * so the page genuinely fits a 375px window.
+ */
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+}

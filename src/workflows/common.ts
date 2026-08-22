@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { noteRunFailure } from '../store';
 
 /**
  * Scaffolding shared by every workflow in this directory (`review`, `test-feature`,
@@ -23,8 +24,33 @@ export const CLAUDE_CLI_REFUSAL =
   '  Use --provider anthropic (set ANTHROPIC_API_KEY), or the Claude Code native path (.claude/ commands).';
 
 /**
+ * T16: where a copy of everything a workflow prints also goes — the run's `log.txt`.
+ *
+ * A sink rather than an argument threaded through every call site: `log()` is called from ~80
+ * places across the three workflows, and the run directory is not known at any of them. The
+ * workflow sets the sink once when its run starts and clears it when the run ends.
+ */
+let logSink: ((line: string) => void) | null = null;
+
+export function setLogSink(sink: ((line: string) => void) | null): void {
+  logSink = sink;
+}
+
+function toRunLog(line: string): void {
+  if (!logSink) return;
+  try {
+    logSink(line);
+  } catch {
+    // A failing log must never take down the run that was producing it.
+  }
+}
+
+/**
  * Write straight to the fd: `process.exit()` can drop output still queued on a pipe, and
  * every message a workflow prints is either the result or the reason for an exit.
+ *
+ * fd 1 is mirrored into the run log too — the result is the most important line a run produces,
+ * and `log.txt` would be a transcript with the ending torn out without it.
  */
 export function write(fd: 1 | 2, line: string): void {
   try {
@@ -32,17 +58,50 @@ export function write(fd: 1 | 2, line: string): void {
   } catch {
     // A closed/blocked stdio stream must never mask the actual outcome.
   }
+  if (fd === 1) toRunLog(line);
 }
 
 /** Progress + tool logging. Always stderr, so stdout stays parseable. */
 export function log(line: string): void {
   write(2, line);
+  toRunLog(line);
 }
 
 /** Print to stderr and exit 1 — a workflow failure never surfaces a stack trace. */
 export function fail(message: string): never {
   write(2, message);
+  toRunLog(message);
+  // `process.exit()` unwinds nothing, so the workflow's own catch never sees this. Hand the
+  // reason to the store first: the run's exit guard records it as the run's `error`.
+  noteRunFailure(message);
   process.exit(1);
+}
+
+/**
+ * The command line a run was started with, for `RunManifest.input.args`.
+ *
+ * Rebuilt from the resolved options rather than read from `process.argv`, because a workflow is
+ * also called directly (tests, the dashboard later) where argv belongs to something else.
+ */
+export function formatArgs(
+  command: string,
+  positionals: readonly (string | undefined)[] = [],
+  flags: Readonly<Record<string, string | boolean | undefined>> = {},
+): string {
+  const parts = [command];
+  for (const value of positionals) if (value?.trim()) parts.push(quoteArg(value));
+  for (const [name, value] of Object.entries(flags)) {
+    if (value === undefined || value === false || value === '') continue;
+    parts.push(`--${name}`);
+    if (typeof value === 'string') parts.push(quoteArg(value));
+  }
+  return parts.join(' ');
+}
+
+/** Shell-safe rendering of one argument, so `input.args` is a line the user can paste back. */
+function quoteArg(value: string): string {
+  const text = oneLine(value);
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? text : `"${text.replace(/(["\\$`])/g, '\\$1')}"`;
 }
 
 export function truncate(value: string, limit = LOG_CAP): string {

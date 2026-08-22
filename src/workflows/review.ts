@@ -2,18 +2,21 @@ import { execFile as execFileCb } from 'node:child_process';
 import fs from 'node:fs';
 import { promisify } from 'node:util';
 import { generateText, stepCountIs } from 'ai';
-import type { Finding, Severity, Verdict } from '../../shared/schemas';
+import type { Finding, ProviderId, Severity, Verdict } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
 import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
+import { startRun, type RunHandle } from '../store';
 import {
   CLAUDE_CLI_REFUSAL,
   describeModelFailure,
   fail,
+  formatArgs,
   isContextOverflowError,
   log,
   messageOf,
+  setLogSink,
   truncate,
   write,
 } from './common';
@@ -561,7 +564,51 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
     fail(`not a git repository: ${repoRoot} (${gitStderr(err)})`);
   }
 
-  let base = opts.base?.trim() || 'main';
+  // T16: from here on the run is recorded. Everything above is configuration — a run that
+  // cannot even name its workspace, agent and model has nothing to write a manifest from.
+  const requested = opts.base?.trim() || 'main';
+  const run = startRun({
+    workspace: cfg.workspace,
+    kind: 'review',
+    agent: 'code-reviewer',
+    provider,
+    model,
+    input: {
+      args: formatArgs('review', [], {
+        base: requested,
+        provider: opts.provider,
+        model: opts.model,
+        config: opts.config,
+        workspace: opts.workspace,
+      }),
+      base: requested,
+    },
+  });
+  setLogSink(run.log);
+  try {
+    const result = await reviewSession({ run, provider, model, repoRoot, base: requested });
+    run.finish('done');
+    return result;
+  } catch (err) {
+    // A throw from inside the session (a bug, an unhandled provider error) still ends the run.
+    // `fail()` never reaches here — it exits the process, and the store's exit guard records it.
+    run.finish('error', { error: messageOf(err) });
+    throw err;
+  } finally {
+    setLogSink(null);
+  }
+}
+
+/** The review itself, once the run exists. Split out purely so the caller can wrap it. */
+async function reviewSession(ctx: {
+  run: RunHandle;
+  provider: ProviderId;
+  model: string;
+  repoRoot: string;
+  base: string;
+}): Promise<ReviewResult> {
+  const { run, provider, model, repoRoot } = ctx;
+  let base = ctx.base;
   try {
     await git(repoRoot, ['rev-parse', '--verify', `${base}^{commit}`]);
   } catch {
@@ -573,6 +620,8 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
         await git(repoRoot, ['rev-parse', '--verify', `origin/${base}^{commit}`]);
         log(`base ref "${base}" not found locally — using "origin/${base}"`);
         base = `origin/${base}`;
+        // The manifest must name the ref that was actually diffed, not the one that was asked for.
+        run.update({ input: { ...run.manifest.input, base } });
         recovered = true;
       } catch {
         recovered = false;
@@ -600,8 +649,19 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
 
   if (diff.text.trim() === '') {
     write(1, 'nothing to review');
+    // An empty diff is a finished run, not a failed one — sealed here because the process
+    // exits on the next line and the caller's `finish` never runs.
+    run.finish('done');
     process.exit(0);
   }
+
+  /**
+   * The diff as the model receives it, saved before the first model call so a run that dies
+   * mid-review still has its evidence. When the 60 KB cap trimmed something, the artifact says
+   * so inline (`…[diff for X truncated]`) — it is the diff the verdict is about, which is what
+   * the dashboard has to show next to the findings.
+   */
+  let diffArtifact = run.artifact('diff.patch', diff.text);
 
   const agent = loadAgent('code-reviewer');
   const tools = makeCoreTools('reviewer', repoRoot);
@@ -714,6 +774,8 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
       } catch (err) {
         return fail(`git diff ${base}...HEAD failed in ${repoRoot}: ${gitStderr(err)}`);
       }
+      // The artifact tracks what the model is actually being sent, shrink after shrink.
+      diffArtifact = run.artifact('diff.patch', diff.text);
       prompt = buildPrompt({
         repoRoot,
         base,
@@ -772,7 +834,10 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
   if (parsed.verdict === 'APPROVE' && hasBlocker(parsed.findings)) {
     log('warning: verdict APPROVE overrides the reported BLOCKER — exit code stays 0');
   }
-  console.log(formatReview(parsed.verdict, parsed.findings));
+  run.update({ review: { verdict: parsed.verdict, findings: parsed.findings, diffArtifact } });
+  // `write(1, …)` rather than `console.log`: same bytes on stdout, but it is also the call the
+  // run log mirrors, so `log.txt` ends with the verdict instead of with the last tool call.
+  write(1, formatReview(parsed.verdict, parsed.findings));
 
   // On stdout, under the verdict: a partial review must not read like a complete one.
   const coverage = coverageNote({
@@ -783,8 +848,8 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
     fullBytes: diff.fullBytes,
   });
   if (coverage) {
-    console.log('');
-    console.log(coverage);
+    write(1, '');
+    write(1, coverage);
   }
 
   return { verdict: parsed.verdict, findings: parsed.findings, raw };

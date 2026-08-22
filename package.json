@@ -8,6 +8,7 @@
   "scripts": {
     "aw": "tsx src/cli.ts",
     "sync-claude": "tsx scripts/sync-claude.ts",
+    "dashboard": "npm --prefix dashboard run dev",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

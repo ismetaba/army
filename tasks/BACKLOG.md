@@ -46,8 +46,8 @@ Paste this (fill `T##`):
 - [ ] [T15](T15.md) — Offers: pre-push hook, video variant (present only)
 
 ## Phase 7 — Dashboard (web management panel)
-- [ ] [T16](T16.md) — Run manifests + workspace store (retrofit T08–T10)
-- [ ] [T17](T17.md) — Dashboard skeleton (workspaces, run list, run detail, artifact API)
+- [x] [T16](T16.md) — Run manifests + workspace store (retrofit T08–T10)
+- [x] [T17](T17.md) — Dashboard skeleton (workspaces, run list, run detail, artifact API)
 - [ ] [T18](T18.md) — Review UI: diff viewer with inline file:line findings
 - [ ] [T19](T19.md) — Test report UI: case table + request/response evidence
 - [ ] [T20](T20.md) — Design gallery: screenshots/video, run compare, feedback queue
