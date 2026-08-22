@@ -144,10 +144,18 @@ body {
   border-radius: 0 !important;
 }
 
-/* ---------------------------------------------------------------- type helpers */
+/*
+ * Everything below lives in `@layer components` on purpose. Tailwind v4 puts its utilities in a
+ * later layer, so a plain `.mono { letter-spacing: -0.045em }` written outside any layer would
+ * outrank `tracking-[-0.03em]` no matter the class order — the helper would silently win and the
+ * override would look like it had no effect. In the components layer these are defaults that any
+ * utility can override, which is what every caller expects.
+ */
+@layer components {
+  /* -------------------------------------------------------------- type helpers */
 
-/* Martian Mono is wide; every mono run carries negative tracking (handoff § Type). */
-.mono {
+  /* Martian Mono is wide; every mono run carries negative tracking (handoff § Type). */
+  .mono {
   font-family: var(--font-mono);
   letter-spacing: -0.045em;
 }
@@ -297,6 +305,7 @@ body {
 .shadow-slip-center {
   box-shadow: 0 20px 44px -34px #17150f;
 }
+}
 
 /* ---------------------------------------------------------------- motion */
 
@@ -362,6 +371,7 @@ body {
   }
 }
 
+@layer components {
 .anim-caret {
   animation: caret 1s step-end infinite;
 }
@@ -377,6 +387,7 @@ body {
 }
 .anim-flip {
   animation: flip 0.35s ease-out;
+}
 }
 
 /*

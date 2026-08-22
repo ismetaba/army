@@ -1,17 +1,16 @@
 /**
- * The Design tab of a run page (T20) — what the ui-designer produced, and what to tell it next.
+ * The Design-loop result (handoff § 04c) — what the ui-designer produced, and what to tell it next.
  *
  * SERVER COMPONENT. It imports `node:fs` (through `@/lib/store`), which makes reaching it from a
  * client component a build error rather than a subtle leak. Everything path-shaped happens here:
  * every screenshot, the video and the queue file are resolved with `resolveArtifact`, the same
- * confinement `/api/artifact` uses, and the client halves receive `/api/artifact?…` URLs and
- * plain strings — never a filesystem path.
+ * confinement `/api/artifact` uses, and the client halves receive `/api/artifact?…` URLs and plain
+ * strings — never a filesystem path.
  *
- * Top to bottom the tab answers three questions in the order a reviewer asks them:
- *   1. What does it look like — the screen grid, the compare dropdown, the session video;
- *   2. What did the agent decide on its own — judgment calls, and the feedback already applied;
- *   3. What should change — the feedback box, which queues to `feedback-queue.json` and hands
- *      over a copyable `--iterate` command (running it is T22).
+ * The body is the artboard's `1fr 340px`. Left: the galleries grouped by screen, then the
+ * recording. Right, in the order a reviewer asks: why did it stop (the amber callout), what did
+ * the agent decide on its own (judgment calls), what has already been asked for (feedback
+ * history), and what should change now (the feedback box).
  *
  * Every string on this page that came out of a manifest is untrusted (SPEC § Dashboard security
  * invariants #3): screen names, judgment calls and feedback history are agent-written, and they
@@ -24,6 +23,7 @@ import { artifactHref, listRuns, resolveArtifact, runDir } from "@/lib/store";
 import type { RunManifest } from "@/lib/store";
 import { DesignGallery, type CompareRun } from "@/components/design-gallery";
 import { DesignFeedback } from "@/components/design-feedback";
+import { EmptyNote, LabelHead, ledgerStatus } from "@/components/task-header";
 import {
   designFeature,
   designSlug,
@@ -48,14 +48,16 @@ const MAX_COMPARE_RUNS = 20;
 
 export function DesignPanel({ run }: { run: RunManifest }) {
   const design = run.design;
+  const logHref = `/ws/${encodeURIComponent(run.workspace)}/run/${encodeURIComponent(run.runId)}?tab=log`;
+
   if (!design) {
     // Reachable only for a design-loop run that died before writing its result block — the tab is
     // shown for the run's KIND, not for the presence of the data.
     return (
-      <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-        This run has no design results in its <span className="font-mono">manifest.json</span>
+      <EmptyNote>
+        This run has no design results in its <span className="mono">manifest.json</span>
         {run.status === "error" ? " — it ended in an error before the designer reported." : "."}
-      </p>
+      </EmptyNote>
     );
   }
 
@@ -63,9 +65,13 @@ export function DesignPanel({ run }: { run: RunManifest }) {
   const video = design.video ? resolveArtifact(run.workspace, run.runId, design.video) : null;
   const queue = readQueue(run);
   const feature = designFeature(run.input);
+  const awaiting = ledgerStatus(run) === "awaiting";
 
   return (
-    <div className="flex min-w-0 flex-col gap-8" data-design-panel>
+    <div
+      className="grid min-w-0 grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,1fr)_340px]"
+      data-design-panel
+    >
       <DesignGallery
         runId={run.runId}
         workspace={run.workspace}
@@ -74,76 +80,117 @@ export function DesignPanel({ run }: { run: RunManifest }) {
         compare={compareCandidates(run)}
         videoHref={video === null ? null : artifactHref(run.workspace, run.runId, video.relPath)}
         videoMissing={design.video && video === null ? design.video : null}
+        logHref={logHref}
       />
 
-      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="flex min-w-0 flex-col gap-[26px]">
+        {awaiting ? (
+          <div className="flex min-w-0 flex-col gap-3 border-l-4 border-warn bg-warn-tint px-[18px] py-4">
+            <span
+              className="mono text-[9px] font-medium text-warn uppercase"
+              style={{ letterSpacing: "0.14em" }}
+            >
+              awaiting feedback
+            </span>
+            <p className="text-[12.5px] leading-[1.55] text-ink-2 [text-wrap:pretty]">
+              The loop stopped here on purpose. It resumes when you send a note back.
+            </p>
+          </div>
+        ) : null}
+
         <TextList
-          title="Judgment calls"
+          title="judgment calls"
           empty="The designer recorded no judgment calls for this run."
           items={design.judgmentCalls}
           testId="judgment-calls"
         />
-        <TextList
-          title="Feedback history"
-          empty="No feedback has been applied to this feature yet — this is the first pass."
-          items={design.feedbackHistory}
-          numbered
-          testId="feedback-history"
+
+        <FeedbackHistory items={design.feedbackHistory} />
+
+        <DesignFeedback
+          ws={run.workspace}
+          runId={run.runId}
+          feature={feature}
+          initialQueue={queue.entries}
+          queueError={queue.error}
         />
       </div>
-
-      <DesignFeedback
-        ws={run.workspace}
-        runId={run.runId}
-        feature={feature}
-        initialQueue={queue.entries}
-        queueError={queue.error}
-      />
     </div>
   );
 }
 
-/**
- * A list of agent-written lines, numbered or bulleted.
- *
- * `feedbackHistory` is numbered with the LATEST LAST (T20 step 1) — it is a transcript of what
- * was asked for, in order, and reversing it would make "then I asked for X" read as "first I
- * asked for X". Judgment calls have no order, so they are bullets.
- */
+/** Numbered lines of agent-written text — rendered as text, wrapping preserved, nothing parsed. */
 function TextList({
   title,
   empty,
   items,
-  numbered = false,
   testId,
 }: {
   title: string;
   empty: string;
   items: readonly string[];
-  numbered?: boolean;
   testId: string;
 }) {
   return (
-    <section className="flex min-w-0 flex-col gap-2" data-design-list={testId}>
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
-        {title}{" "}
-        {items.length > 0 ? <span className="font-normal normal-case">({items.length})</span> : null}
-      </h2>
+    <section className="flex min-w-0 flex-col gap-3" data-design-list={testId}>
+      <LabelHead>
+        {title}
+        {items.length > 0 ? ` · ${items.length}` : ""}
+      </LabelHead>
       {items.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-line px-4 py-6 text-sm text-muted">
-          {empty}
-        </p>
+        <p className="text-[12.5px] leading-[1.55] text-ink-2">{empty}</p>
       ) : (
-        <ol className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface p-3">
+        <ol className="flex min-w-0 flex-col gap-3">
           {items.map((item, index) => (
-            <li key={index} className="flex min-w-0 gap-2 text-sm">
-              <span className="shrink-0 font-mono text-xs text-muted">
-                {numbered ? `${index + 1}.` : "•"}
+            <li key={index} className="flex min-w-0 gap-[11px]">
+              <span className="mono shrink-0 pt-[3px] text-[9px] text-accent">
+                {String(index + 1).padStart(2, "0")}
               </span>
-              {/* Untrusted manifest text: rendered as text, wrapping preserved, nothing parsed. */}
-              <span className="min-w-0 break-words whitespace-pre-wrap">{item}</span>
+              <span className="min-w-0 text-[12.5px] leading-[1.55] break-words whitespace-pre-wrap text-ink-2 [text-wrap:pretty]">
+                {item}
+              </span>
             </li>
           ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+/**
+ * What has already been asked for, newest first.
+ *
+ * `design.feedbackHistory` is a plain array of strings (SPEC § Types) with no timestamps, so the
+ * artboard's `19 Aug 09:41 · iteration 1` line becomes `iteration 1` — the iteration number is
+ * printed EXPLICITLY precisely because the list is reversed, so "newest first" can never be
+ * misread as "this is what I asked for first".
+ */
+function FeedbackHistory({ items }: { items: readonly string[] }) {
+  return (
+    <section className="flex min-w-0 flex-col gap-3" data-design-list="feedback-history">
+      <LabelHead>feedback history{items.length > 0 ? ` · ${items.length}` : ""}</LabelHead>
+      {items.length === 0 ? (
+        <p className="text-[12.5px] leading-[1.55] text-ink-2">
+          No feedback has been applied to this feature yet — this is the first pass.
+        </p>
+      ) : (
+        <ol className="flex min-w-0 flex-col gap-3">
+          {items
+            .map((text, index) => ({ text, iteration: index + 1 }))
+            .reverse()
+            .map((entry, i) => (
+              <li
+                key={entry.iteration}
+                className={`flex min-w-0 flex-col gap-1.5 ${
+                  i === 0 ? "" : "border-t border-dotted border-line pt-3"
+                }`}
+              >
+                <span className="mono text-[9px] text-muted">iteration {entry.iteration}</span>
+                <span className="min-w-0 text-[12.5px] leading-[1.55] break-words whitespace-pre-wrap text-ink-2 [text-wrap:pretty]">
+                  {entry.text}
+                </span>
+              </li>
+            ))}
         </ol>
       )}
     </section>
@@ -180,7 +227,7 @@ function resolveScreens(
 }
 
 /**
- * Other design-loop runs of the SAME feature, newest first (T20 step 2).
+ * Other design-loop runs of the SAME feature, newest first.
  *
  * Same workspace only: a run in another workspace is a different repo, so a "then vs now" pair
  * across two of them would compare screenshots of two different applications. The match is on the
@@ -198,7 +245,7 @@ function compareCandidates(run: RunManifest): CompareRun[] {
     .map((r) => ({
       runId: r.runId,
       createdAt: r.createdAt,
-      href: `/ws/${encodeURIComponent(r.workspace)}/run/${encodeURIComponent(r.runId)}?tab=design`,
+      href: `/ws/${encodeURIComponent(r.workspace)}/run/${encodeURIComponent(r.runId)}`,
       // ISO 8601 sorts lexically, and `listRuns` already sorted on it.
       older: r.createdAt < run.createdAt,
       iterate: iterateFeedback(r),
@@ -219,10 +266,10 @@ function iterateFeedback(run: RunManifest): string | null {
  * none. The distinction is what the feedback box needs: an unparseable file blocks queuing
  * (writing would destroy it), while a missing one is the normal first-time state.
  *
- * `resolveArtifact` returning `null` is ambiguous on its own — missing file, a directory with
- * that name, or a symlink pointing out of the run — so an `lstat` (which does NOT follow the
- * link) tells the two apart. It runs on the LEXICAL run directory, which `runDir` has validated
- * as two safe path segments, and only to ask "is anything there"; nothing is read through it.
+ * `resolveArtifact` returning `null` is ambiguous on its own — missing file, a directory with that
+ * name, or a symlink pointing out of the run — so an `lstat` (which does NOT follow the link)
+ * tells the two apart. It runs on the LEXICAL run directory, which `runDir` has validated as two
+ * safe path segments, and only to ask "is anything there"; nothing is read through it.
  */
 function readQueue(run: RunManifest): { entries: FeedbackEntry[]; error: string | null } {
   const unusable = {

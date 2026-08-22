@@ -4,9 +4,23 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AGENT_NAMES, PROVIDER_IDS, isPlainObject } from "@/lib/config-patch";
 import type { FieldIssue } from "@/lib/config-patch";
+import { PrimaryButton, QuietButton } from "@/components/ledger/chrome";
+import {
+  ACTION,
+  DangerCallout,
+  FieldError,
+  SettingsField,
+  SettingsSection,
+  SubHead,
+  UnderlineInput,
+  UnderlineNumber,
+  UnderlineSelect,
+  UnderlineTextarea,
+} from "@/components/settings/fields";
 
 /**
- * T21 step 1 — the settings form for one workspace's `aw.config.json`.
+ * T21 step 1 — the settings form for one workspace's `aw.config.json`, in the Ledger design
+ * (handoff § 05: three of the four ruled sections live here, the fourth is the registry).
  *
  * The only client component that writes to a developer's repo, so three decisions are worth
  * stating out loud:
@@ -26,9 +40,13 @@ import type { FieldIssue } from "@/lib/config-patch";
  * the first time it is used.
  *
  * **There is no password field, anywhere.** The test account has a user and the NAME of an
- * environment variable, and the note under it says where the password actually lives. SPEC
- * § Dashboard security invariants #5; the API rejects a password-shaped key even if one somehow
- * reached it.
+ * environment variable, and the label says so in as many words. SPEC § Dashboard security
+ * invariants #5; the API rejects a password-shaped key even if one somehow reached it.
+ *
+ * On the design side: every input is an underline, never a box (handoff § Geometry), and the two
+ * blocks the four designed sections do not name — viewports and off-limits — are sub-blocks under
+ * the section they belong to rather than new 2px-ruled sections, so the section index still has
+ * the four entries § 05 specifies while the form keeps every field the config has.
  */
 
 /** T21 step 4, verbatim. Shown on any provider row set to `claude-cli`. */
@@ -263,10 +281,8 @@ export function ConfigForm({
     }
   }
 
-  const claudeCliRows = [
-    state.defaultsProvider === "claude-cli" ? "defaults" : null,
-    ...AGENT_NAMES.map((name) => (state.agents[name]?.provider === "claude-cli" ? name : null)),
-  ].filter((v): v is string => v !== null);
+  const inheritProvider = state.defaultsProvider || "default";
+  const inheritModel = state.defaultsModel.trim() || "default";
 
   return (
     // `noValidate`: the browser's own constraint validation must not get a vote here. With it on,
@@ -274,420 +290,311 @@ export function ConfigForm({
     // the server never sees the value and the panel cannot say which field is wrong or that
     // nothing was written. One validator (the server, which owns the file) beats two that
     // disagree — and it is the same validator the CLI uses.
-    <form onSubmit={save} noValidate className="flex min-w-0 flex-col gap-6" data-testid="config-form">
-      <Section
-        title="Defaults"
-        hint="Used by every agent that has no override below (SPEC § Model resolution, level 3)."
-      >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="provider" htmlFor="defaults-provider" error={issueFor("defaults.provider")}>
-            <select
+    <form
+      onSubmit={save}
+      noValidate
+      className="flex min-w-0 flex-col gap-10"
+      data-testid="config-form"
+    >
+      <SettingsSection id="defaults" title="Defaults" aside="used by every task unless overridden">
+        <div className="grid min-w-0 grid-cols-1 gap-6 sm:grid-cols-[1fr_1.4fr] sm:gap-8">
+          <SettingsField label="provider" htmlFor="defaults-provider" error={issueFor("defaults.provider")}>
+            <UnderlineSelect
               id="defaults-provider"
+              scale="lg"
               value={state.defaultsProvider}
-              onChange={(e) => set("defaultsProvider", e.target.value)}
-              className={inputClass(issueFor("defaults.provider"))}
-            >
-              {PROVIDER_IDS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="model" htmlFor="defaults-model" error={issueFor("defaults.model")}>
-            <input
-              id="defaults-model"
-              type="text"
-              value={state.defaultsModel}
-              onChange={(e) => set("defaultsModel", e.target.value)}
-              placeholder="qwen3-coder-30b-a3b-instruct"
-              className={inputClass(issueFor("defaults.model"))}
+              onChange={(v) => set("defaultsProvider", v)}
+              options={PROVIDER_IDS}
+              danger={state.defaultsProvider === "claude-cli"}
+              invalid={issueFor("defaults.provider") !== undefined}
             />
-          </Field>
+          </SettingsField>
+          <SettingsField label="model id" htmlFor="defaults-model" error={issueFor("defaults.model")}>
+            <UnderlineInput
+              id="defaults-model"
+              scale="lg"
+              value={state.defaultsModel}
+              onChange={(v) => set("defaultsModel", v)}
+              placeholder="qwen3-coder-30b-a3b-instruct"
+              invalid={issueFor("defaults.model") !== undefined}
+            />
+          </SettingsField>
         </div>
         {state.defaultsProvider === "claude-cli" ? <ClaudeCliWarning /> : null}
-      </Section>
+      </SettingsSection>
 
-      <Section
+      <SettingsSection
+        id="agents"
         title="Agent overrides"
-        hint="Per-agent provider and model. “inherit” means the default above; a provider that differs from the default needs its own model id."
+        aside="per-agent, falls back to the defaults above"
       >
         <div className="flex min-w-0 flex-col gap-4">
           {AGENT_NAMES.map((name) => {
             const row = state.agents[name] ?? { provider: "", model: "" };
+            const isClaudeCli = row.provider === "claude-cli";
+            const providerIssue = issueFor(`agents.${name}.provider`);
+            const modelIssue = issueFor(`agents.${name}.model`);
             return (
-              <div key={name} className="flex min-w-0 flex-col gap-2" data-agent-row={name}>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[10rem_1fr_1fr]">
-                  <span className="self-center font-mono text-sm text-fg">{name}</span>
-                  <Field
-                    label="provider"
-                    htmlFor={`agent-${name}-provider`}
-                    error={issueFor(`agents.${name}.provider`)}
-                  >
-                    <select
+              <div
+                key={name}
+                data-agent-row={name}
+                className="flex min-w-0 flex-col gap-3 border-b border-dotted border-line pb-4 last:border-b-0 last:pb-0"
+              >
+                <div className="grid min-w-0 grid-cols-1 items-start gap-4 sm:grid-cols-[180px_1fr_1.3fr] sm:gap-6">
+                  <span className="mono text-[12px] text-fg sm:pt-px">{name}</span>
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <UnderlineSelect
                       id={`agent-${name}-provider`}
+                      ariaLabel={`${name} provider`}
                       value={row.provider}
-                      onChange={(e) => setAgent(name, "provider", e.target.value)}
-                      className={inputClass(issueFor(`agents.${name}.provider`))}
-                    >
-                      <option value="">inherit ({state.defaultsProvider || "default"})</option>
-                      {PROVIDER_IDS.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field
-                    label="model"
-                    htmlFor={`agent-${name}-model`}
-                    error={issueFor(`agents.${name}.model`)}
-                  >
-                    <input
-                      id={`agent-${name}-model`}
-                      type="text"
-                      value={row.model}
-                      onChange={(e) => setAgent(name, "model", e.target.value)}
-                      placeholder="inherit"
-                      className={inputClass(issueFor(`agents.${name}.model`))}
+                      onChange={(v) => setAgent(name, "provider", v)}
+                      options={PROVIDER_IDS}
+                      inheritLabel={`inherit (${inheritProvider})`}
+                      danger={isClaudeCli}
+                      invalid={providerIssue !== undefined}
                     />
-                  </Field>
+                    {providerIssue === undefined ? null : (
+                      <FieldError htmlFor={`agent-${name}-provider`}>{providerIssue}</FieldError>
+                    )}
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <UnderlineInput
+                      id={`agent-${name}-model`}
+                      ariaLabel={`${name} model id`}
+                      value={row.model}
+                      onChange={(v) => setAgent(name, "model", v)}
+                      placeholder={`inherit (${inheritModel})`}
+                      danger={isClaudeCli}
+                      invalid={modelIssue !== undefined}
+                    />
+                    {modelIssue === undefined ? null : (
+                      <FieldError htmlFor={`agent-${name}-model`}>{modelIssue}</FieldError>
+                    )}
+                  </div>
                 </div>
-                {row.provider === "claude-cli" ? <ClaudeCliWarning /> : null}
+                {isClaudeCli ? <ClaudeCliWarning /> : null}
               </div>
             );
           })}
         </div>
-      </Section>
 
-      <Section title="App" hint="How the workflows start and reach the app under test.">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="backend start" htmlFor="backend-start" error={issueFor("app.backend.start")}>
-            <input
+        <SubHead aside="one per line · handed to every agent as a hard boundary">
+          off limits
+        </SubHead>
+        <SettingsField label="off limits" htmlFor="off-limits" hideLabel error={issueFor("offLimits")}>
+          <UnderlineTextarea
+            id="off-limits"
+            value={state.offLimits}
+            onChange={(v) => set("offLimits", v)}
+            placeholder={"shared dev database\nthe billing service"}
+            invalid={issueFor("offLimits") !== undefined}
+          />
+        </SettingsField>
+      </SettingsSection>
+
+      <SettingsSection id="app" title="App" aside="how the panel starts and reaches your app">
+        <div className="grid min-w-0 grid-cols-1 gap-7 sm:grid-cols-2 sm:gap-x-8">
+          <SettingsField label="backend start" htmlFor="backend-start" error={issueFor("app.backend.start")}>
+            <UnderlineInput
               id="backend-start"
-              type="text"
               value={state.backendStart}
-              onChange={(e) => set("backendStart", e.target.value)}
+              onChange={(v) => set("backendStart", v)}
               placeholder="npm run dev:api"
-              className={inputClass(issueFor("app.backend.start"))}
+              invalid={issueFor("app.backend.start") !== undefined}
             />
-          </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="backend port" htmlFor="backend-port" error={issueFor("app.backend.port")}>
-              <NumberInput
-                id="backend-port"
-                value={state.backendPort}
-                onChange={(v) => set("backendPort", v)}
-                placeholder="3001"
-                invalid={issueFor("app.backend.port") !== undefined}
-              />
-            </Field>
-            <Field
-              label="health path"
-              htmlFor="backend-health"
-              error={issueFor("app.backend.healthPath")}
-            >
-              <input
-                id="backend-health"
-                type="text"
-                value={state.backendHealthPath}
-                onChange={(e) => set("backendHealthPath", e.target.value)}
-                placeholder="/health"
-                className={inputClass(issueFor("app.backend.healthPath"))}
-              />
-            </Field>
-          </div>
-          <Field label="frontend start" htmlFor="frontend-start" error={issueFor("app.frontend.start")}>
-            <input
+          </SettingsField>
+          <SettingsField label="backend port" htmlFor="backend-port" error={issueFor("app.backend.port")}>
+            <UnderlineNumber
+              id="backend-port"
+              value={state.backendPort}
+              onChange={(v) => set("backendPort", v)}
+              placeholder="3001"
+              invalid={issueFor("app.backend.port") !== undefined}
+            />
+          </SettingsField>
+          <SettingsField label="frontend start" htmlFor="frontend-start" error={issueFor("app.frontend.start")}>
+            <UnderlineInput
               id="frontend-start"
-              type="text"
               value={state.frontendStart}
-              onChange={(e) => set("frontendStart", e.target.value)}
+              onChange={(v) => set("frontendStart", v)}
               placeholder="npm run dev"
-              className={inputClass(issueFor("app.frontend.start"))}
+              invalid={issueFor("app.frontend.start") !== undefined}
             />
-          </Field>
-          <Field label="frontend port" htmlFor="frontend-port" error={issueFor("app.frontend.port")}>
-            <NumberInput
+          </SettingsField>
+          <SettingsField label="frontend port" htmlFor="frontend-port" error={issueFor("app.frontend.port")}>
+            <UnderlineNumber
               id="frontend-port"
               value={state.frontendPort}
               onChange={(v) => set("frontendPort", v)}
               placeholder="5173"
               invalid={issueFor("app.frontend.port") !== undefined}
             />
-          </Field>
-          <Field label="base URL" htmlFor="base-url" error={issueFor("app.baseUrl")}>
-            <input
+          </SettingsField>
+          <SettingsField label="base url" htmlFor="base-url" error={issueFor("app.baseUrl")}>
+            <UnderlineInput
               id="base-url"
-              type="text"
               value={state.baseUrl}
-              onChange={(e) => set("baseUrl", e.target.value)}
+              onChange={(v) => set("baseUrl", v)}
               placeholder="http://localhost:3001"
-              className={inputClass(issueFor("app.baseUrl"))}
+              invalid={issueFor("app.baseUrl") !== undefined}
             />
-          </Field>
-          <Field label="staging URL" htmlFor="staging-url" error={issueFor("app.stagingUrl")}>
-            <input
+          </SettingsField>
+          <SettingsField label="health path" htmlFor="backend-health" error={issueFor("app.backend.healthPath")}>
+            <UnderlineInput
+              id="backend-health"
+              value={state.backendHealthPath}
+              onChange={(v) => set("backendHealthPath", v)}
+              placeholder="/health"
+              invalid={issueFor("app.backend.healthPath") !== undefined}
+            />
+          </SettingsField>
+          <SettingsField label="staging url" htmlFor="staging-url" error={issueFor("app.stagingUrl")}>
+            <UnderlineInput
               id="staging-url"
-              type="text"
               value={state.stagingUrl}
-              onChange={(e) => set("stagingUrl", e.target.value)}
+              onChange={(v) => set("stagingUrl", v)}
               placeholder="(none — production is never a target)"
-              className={inputClass(issueFor("app.stagingUrl"))}
+              invalid={issueFor("app.stagingUrl") !== undefined}
             />
-          </Field>
-          <Field label="test account user" htmlFor="test-user" error={issueFor("app.testAccount.user")}>
-            <input
+          </SettingsField>
+          <SettingsField label="test account user" htmlFor="test-user" error={issueFor("app.testAccount.user")}>
+            <UnderlineInput
               id="test-user"
-              type="text"
               value={state.testUser}
-              onChange={(e) => set("testUser", e.target.value)}
+              onChange={(v) => set("testUser", v)}
               placeholder="test@example.com"
-              className={inputClass(issueFor("app.testAccount.user"))}
+              invalid={issueFor("app.testAccount.user") !== undefined}
             />
-          </Field>
-          <Field
-            label="password env var NAME"
+          </SettingsField>
+          <SettingsField
+            label="password env var"
+            note="name only, never the value"
             htmlFor="pass-env"
             error={issueFor("app.testAccount.passEnv")}
           >
-            <input
+            <UnderlineInput
               id="pass-env"
-              type="text"
               value={state.passEnv}
-              onChange={(e) => set("passEnv", e.target.value)}
+              onChange={(v) => set("passEnv", v)}
               placeholder="AW_TEST_PASSWORD"
               autoComplete="off"
-              className={inputClass(issueFor("app.testAccount.passEnv"))}
+              describedBy="pass-env-note"
+              invalid={issueFor("app.testAccount.passEnv") !== undefined}
             />
-          </Field>
+          </SettingsField>
         </div>
-        <p className="rounded border border-line bg-surface-2 px-3 py-2 text-xs text-muted">
-          The password itself is never asked for, never shown and never written here. Set{" "}
-          <span className="font-mono">{state.passEnv.trim() || "AW_TEST_PASSWORD"}</span> in your
-          shell or <span className="font-mono">.env</span>; only its NAME is stored in{" "}
-          <span className="font-mono">aw.config.json</span>.
-        </p>
-      </Section>
 
-      <Section title="Viewports" hint="The two sizes design-loop screenshots every screen at.">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Field label="mobile width" htmlFor="mobile-width" error={issueFor("viewports.mobile.width")}>
-            <NumberInput
+        <p id="pass-env-note" className="max-w-[62ch] text-[12px] leading-[1.6] text-ink-2">
+          The password itself is never asked for, never shown and never written here. Set{" "}
+          <span className="mono text-[11px] text-fg">
+            {state.passEnv.trim() || "AW_TEST_PASSWORD"}
+          </span>{" "}
+          in your shell or <span className="mono text-[11px] text-fg">.env</span>; only its name is
+          stored in <span className="mono text-[11px] text-fg">aw.config.json</span>.
+        </p>
+
+        <SubHead aside="the two sizes design-loop shoots every screen at">viewports</SubHead>
+        <div className="grid min-w-0 grid-cols-2 gap-6 sm:grid-cols-4 sm:gap-x-8">
+          <SettingsField label="mobile w" htmlFor="mobile-width" error={issueFor("viewports.mobile.width")}>
+            <UnderlineNumber
               id="mobile-width"
               value={state.mobileWidth}
               onChange={(v) => set("mobileWidth", v)}
               placeholder="375"
               invalid={issueFor("viewports.mobile.width") !== undefined}
             />
-          </Field>
-          <Field label="mobile height" htmlFor="mobile-height" error={issueFor("viewports.mobile.height")}>
-            <NumberInput
+          </SettingsField>
+          <SettingsField label="mobile h" htmlFor="mobile-height" error={issueFor("viewports.mobile.height")}>
+            <UnderlineNumber
               id="mobile-height"
               value={state.mobileHeight}
               onChange={(v) => set("mobileHeight", v)}
               placeholder="812"
               invalid={issueFor("viewports.mobile.height") !== undefined}
             />
-          </Field>
-          <Field label="desktop width" htmlFor="desktop-width" error={issueFor("viewports.desktop.width")}>
-            <NumberInput
+          </SettingsField>
+          <SettingsField label="desktop w" htmlFor="desktop-width" error={issueFor("viewports.desktop.width")}>
+            <UnderlineNumber
               id="desktop-width"
               value={state.desktopWidth}
               onChange={(v) => set("desktopWidth", v)}
               placeholder="1440"
               invalid={issueFor("viewports.desktop.width") !== undefined}
             />
-          </Field>
-          <Field
-            label="desktop height"
-            htmlFor="desktop-height"
-            error={issueFor("viewports.desktop.height")}
-          >
-            <NumberInput
+          </SettingsField>
+          <SettingsField label="desktop h" htmlFor="desktop-height" error={issueFor("viewports.desktop.height")}>
+            <UnderlineNumber
               id="desktop-height"
               value={state.desktopHeight}
               onChange={(v) => set("desktopHeight", v)}
               placeholder="900"
               invalid={issueFor("viewports.desktop.height") !== undefined}
             />
-          </Field>
+          </SettingsField>
         </div>
-      </Section>
-
-      <Section title="Off limits" hint="One per line. Handed to every agent as a hard boundary.">
-        <Field label="offLimits" htmlFor="off-limits" error={issueFor("offLimits")} hideLabel>
-          <textarea
-            id="off-limits"
-            rows={3}
-            value={state.offLimits}
-            onChange={(e) => set("offLimits", e.target.value)}
-            placeholder={"shared dev database\nthe billing service"}
-            className={`${inputClass(issueFor("offLimits"))} font-mono`}
-          />
-        </Field>
-      </Section>
-
-      {claudeCliRows.length > 0 ? (
-        <p
-          className="rounded border border-line bg-error-bg px-3 py-2 text-sm text-error-fg"
-          data-testid="claude-cli-summary"
-        >
-          {CLAUDE_CLI_WARNING} Selected for: {claudeCliRows.join(", ")}.
-        </p>
-      ) : null}
+      </SettingsSection>
 
       {issues.length > 0 ? (
-        <div
-          className="rounded border border-line bg-error-bg px-3 py-2 text-sm text-error-fg"
-          role="alert"
-          data-testid="config-issues"
-        >
+        <DangerCallout role="alert" testId="config-issues">
           <p className="font-medium">
             {issues.length} problem{issues.length === 1 ? "" : "s"} — nothing was written.
           </p>
-          <ul className="mt-1 list-disc pl-5 text-xs">
+          <ul className="mt-1.5 flex flex-col gap-1">
             {issues.map((issue) => (
-              <li key={`${issue.path}:${issue.message}`}>
-                <span className="font-mono">{issue.path || "(root)"}</span>: {issue.message}
+              <li key={`${issue.path}:${issue.message}`} className="min-w-0">
+                <span className="mono text-[10.5px]">{issue.path || "(root)"}</span> — {issue.message}
               </li>
             ))}
           </ul>
-        </div>
+        </DangerCallout>
       ) : null}
 
-      <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-line pt-4">
-        <button
-          type="submit"
-          disabled={status.kind === "saving"}
-          className="rounded border border-link bg-surface-2 px-4 py-1.5 text-sm font-medium text-fg transition-colors hover:brightness-105 disabled:opacity-50"
-        >
-          {status.kind === "saving" ? "saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void reload()}
-          disabled={status.kind === "saving"}
-          className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-muted transition-colors hover:border-link hover:text-fg disabled:opacity-50"
-        >
-          Reload from disk
-        </button>
+      <div className="flex min-w-0 flex-col gap-3 border-t border-line pt-5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3">
+          <PrimaryButton type="submit" disabled={status.kind === "saving"} className={ACTION}>
+            {status.kind === "saving" ? "saving…" : "save"}
+          </PrimaryButton>
+          <QuietButton
+            type="button"
+            onClick={() => void reload()}
+            disabled={status.kind === "saving"}
+            className={ACTION}
+          >
+            reload from disk
+          </QuietButton>
 
-        {status.kind === "saved" ? (
-          <span className="text-sm text-done-fg" data-testid="save-status">
-            {status.unchanged ? "no changes — file untouched" : "saved"}
-          </span>
-        ) : null}
-        {status.kind === "error" ? (
-          <span className="text-sm text-error-fg" data-testid="save-status">
-            {status.message}
-          </span>
-        ) : null}
-
-        <span className="min-w-0 basis-full font-mono text-xs break-all text-muted">{path}</span>
+          {/* A result is never colour alone: mark shape + word, as everywhere else in the panel. */}
+          {status.kind === "saved" ? (
+            <span
+              className="inline-flex min-w-0 items-center gap-2 text-ok"
+              role="status"
+              data-testid="save-status"
+            >
+              <span className="mark mark-done" aria-hidden />
+              <span className="statusword">{status.unchanged ? "unchanged" : "saved"}</span>
+              {status.unchanged ? (
+                <span className="text-[12px] text-ink-2">nothing to write — the file is untouched</span>
+              ) : null}
+            </span>
+          ) : null}
+          {status.kind === "error" ? (
+            <span
+              className="inline-flex min-w-0 items-center gap-2 text-danger"
+              role="alert"
+              data-testid="save-status"
+            >
+              <span className="mark mark-error" aria-hidden />
+              <span className="statusword">error</span>
+              <span className="min-w-0 text-[12px] leading-[1.5]">{status.message}</span>
+            </span>
+          ) : null}
+        </div>
+        <span className="mono min-w-0 text-[9.5px] break-all text-muted">{path}</span>
       </div>
     </form>
   );
 }
 
 function ClaudeCliWarning() {
-  return (
-    <p
-      className="rounded border border-line bg-error-bg px-3 py-2 text-xs text-error-fg"
-      data-testid="claude-cli-warning"
-      role="note"
-    >
-      {CLAUDE_CLI_WARNING}
-    </p>
-  );
-}
-
-function inputClass(error?: string): string {
-  return `w-full min-w-0 rounded border bg-surface px-2 py-1.5 text-sm text-fg outline-none transition-colors focus:border-link ${
-    error === undefined ? "border-line" : "border-error-fg"
-  }`;
-}
-
-/**
- * A numeric field that keeps what you typed. `inputMode="numeric"` gets the numeric keypad on a
- * phone; the value stays a string all the way to the server — see the component header for why
- * `type="number"` is the wrong tool here, and the `noValidate` note on the form for why there is
- * no `pattern` either.
- */
-function NumberInput({
-  id,
-  value,
-  onChange,
-  placeholder,
-  invalid,
-}: {
-  id: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  invalid: boolean;
-}) {
-  return (
-    <input
-      id={id}
-      type="text"
-      inputMode="numeric"
-      value={value}
-      aria-invalid={invalid || undefined}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={`${inputClass(invalid ? "x" : undefined)} tabular-nums`}
-    />
-  );
-}
-
-function Section({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-      <div className="flex flex-col gap-0.5">
-        <h3 className="text-sm font-semibold tracking-tight text-fg">{title}</h3>
-        {hint ? <p className="text-xs text-muted">{hint}</p> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Field({
-  label,
-  htmlFor,
-  error,
-  hideLabel = false,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  error?: string;
-  hideLabel?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <label
-        htmlFor={htmlFor}
-        className={`text-xs uppercase tracking-wide text-muted ${hideLabel ? "sr-only" : ""}`}
-      >
-        {label}
-      </label>
-      {children}
-      {error === undefined ? null : (
-        <p className="text-xs text-error-fg" data-field-error={htmlFor}>
-          {error}
-        </p>
-      )}
-    </div>
-  );
+  return <DangerCallout testId="claude-cli-warning">{CLAUDE_CLI_WARNING}</DangerCallout>;
 }

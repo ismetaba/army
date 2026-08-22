@@ -1,51 +1,53 @@
 "use client";
 
 /**
- * The Report tab's case table and failure drawer (T19 step 1).
+ * The case table and the failure drawer (handoff § 04b / § 04b-2).
  *
- * This is the one client component in the tab, and it is a client component for exactly two
- * reasons: the status/kind filters and the row → drawer interaction. Everything static (summary,
- * feature history, raw report) is rendered on the server in `report-panel.tsx` and never enters
- * this bundle.
+ * This is the one client component in the Test-feature result, and it is a client component for
+ * exactly two reasons: the status/kind filters and the row → drawer interaction. Everything
+ * static (title, counts, feature history, raw report) is rendered on the server in
+ * `report-panel.tsx` and never enters this bundle.
  *
  * It imports `@shared/schemas` for TYPES ONLY. `@/lib/store` — which imports `node:fs` — must
  * never be reachable from here; the types are the only thing the two sides share.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { Severity, TestCase } from "@shared/schemas";
+import type { TestCase } from "@shared/schemas";
 import type { CaseKind, CaseStatus } from "@/components/report-data";
-import { KIND_ORDER, STATUS_ORDER, countByKind, countByStatus, sortCases } from "@/components/report-data";
+import {
+  KIND_ORDER,
+  STATUS_ORDER,
+  countByKind,
+  countByStatus,
+  sortCases,
+} from "@/components/report-data";
+import { CopyButton } from "@/components/ledger/chrome";
+import { EmptyNote } from "@/components/task-header";
+import { SEVERITY_INK } from "@/components/verdict";
 
 type StatusFilter = CaseStatus | "all";
 type KindFilter = CaseKind | "all";
 
-/** PASS green / FAIL red / SKIP gray (T19 step 1), from the theme variables so dark mode works. */
-const STATUS_STYLE: Record<CaseStatus, string> = {
-  PASS: "bg-done-bg text-done-fg",
-  FAIL: "bg-error-bg text-error-fg",
-  SKIP: "bg-cancelled-bg text-cancelled-fg",
+/**
+ * PASS / FAIL / SKIP as mark + word, never a coloured dot (handoff § Accessibility). The shapes
+ * are the same vocabulary the run statuses use: solid for a pass, 45° hatch for a failure, a
+ * dashed outline for something that never ran.
+ */
+const CASE_MARK: Record<CaseStatus, string> = {
+  PASS: "mark-done",
+  FAIL: "mark-error",
+  SKIP: "mark-cancelled",
 };
 
-/**
- * Severity pills, shown only on failures.
- *
- * BLOCKER and MAJOR share the error colours because they are the same message — "this one is
- * real" — and are told apart by the ring; MINOR and NIT deliberately recede into the neutral
- * pair, because a red NIT next to a red BLOCKER is how a reader learns to ignore red.
- *
- * Keyed on `Severity`, not `string`, for the same reason `STATUS_STYLE` above is keyed on
- * `CaseStatus`: a fifth value added to the SPEC enum must break this build, not silently render
- * as a grey pill. The `?? fallback` at the call sites stays as belt and braces — `severity` comes
- * out of an agent-written manifest, and a manifest that slipped past validation should still draw
- * something.
- */
-const SEVERITY_STYLE: Record<Severity, string> = {
-  BLOCKER: "bg-error-bg text-error-fg ring-1 ring-error-fg/50 font-semibold",
-  MAJOR: "bg-error-bg text-error-fg",
-  MINOR: "bg-cancelled-bg text-cancelled-fg",
-  NIT: "bg-cancelled-bg text-cancelled-fg",
+const CASE_INK: Record<CaseStatus, string> = {
+  PASS: "text-ok",
+  FAIL: "text-danger",
+  SKIP: "text-muted",
 };
+
+/** The table's five columns, as one grid template shared by the head and every row. */
+const GRID = "grid grid-cols-[70px_minmax(0,2.4fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,0.9fr)] gap-4";
 
 export function ReportCases({ cases }: { cases: TestCase[] }) {
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -66,10 +68,15 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
     () =>
       sorted
         .map((c, index) => ({ c, index }))
-        .filter(({ c }) => (status === "all" || c.status === status) && (kind === "all" || c.kind === kind)),
+        .filter(
+          ({ c }) =>
+            (status === "all" || c.status === status) && (kind === "all" || c.kind === kind),
+        ),
     [sorted, status, kind],
   );
 
+  /** Where the open case sits in the VISIBLE list — what `← PREV` / `NEXT →` page through. */
+  const position = visible.findIndex((v) => v.index === selected);
   const openCase = selected === null ? null : (sorted[selected] ?? null);
 
   // The row that opened the drawer, so focus can go back to it on close — closing a dialog and
@@ -84,17 +91,35 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
      *
      * Order matters: if the drawer's Close button is still the focused element when React removes
      * it, the browser has already dropped focus on <body> by the time any callback of ours runs,
-     * and a keyboard user is back at the top of the page. Moving focus out first means the
-     * element being removed is not the focused one, so nothing is lost — and it needs no
+     * and a keyboard user is back at the top of the page. Moving focus out first means the element
+     * being removed is not the focused one, so nothing is lost — and it needs no
      * `requestAnimationFrame`, which would not fire at all in a background tab.
      */
     trigger?.focus();
     setSelected(null);
   }, []);
 
+  const step = useCallback(
+    (delta: number) => {
+      if (position < 0) return;
+      const next = visible[position + delta];
+      if (next !== undefined) setSelected(next.index);
+    },
+    [position, visible],
+  );
+
+  const open = (index: number, row: HTMLElement) => {
+    const button = row.querySelector<HTMLButtonElement>("[data-case-open]");
+    if (button !== null) {
+      triggerRef.current = button;
+      if (document.activeElement !== button) button.focus();
+    }
+    setSelected(index);
+  };
+
   return (
-    <section className="flex min-w-0 flex-col gap-3" data-report-cases>
-      <div className="flex flex-col gap-2">
+    <section className="flex min-w-0 flex-col gap-4" data-report-cases>
+      <div className="flex min-w-0 flex-col gap-2">
         <FilterRow
           label="status"
           options={[
@@ -105,7 +130,7 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
             })),
           ]}
           value={status}
-          onChange={(v) => setStatus(v)}
+          onChange={setStatus}
         />
         <FilterRow
           label="kind"
@@ -117,103 +142,98 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
             })),
           ]}
           value={kind}
-          onChange={(v) => setKind(v)}
+          onChange={setKind}
         />
       </div>
 
       {visible.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
+        <EmptyNote>
           {/* "no cases at all" and "no cases left after filtering" are different problems, and
               telling a reader to loosen filters they never set is the more annoying of the two. */}
-          {cases.length === 0 ? "This report has no cases." : "No cases match these filters."}
-        </p>
+          {cases.length === 0 ? "This report has no cases." : "No case matches these filters."}
+        </EmptyNote>
       ) : (
-        /* The table is wider than a phone and scrolls INSIDE this box — `min-w-0` is what stops a
-           flex parent from letting it push the page sideways instead. */
-        <div className="min-w-0 overflow-x-auto rounded-lg border border-line bg-surface">
-          <table className="w-full min-w-[36rem] border-collapse text-sm">
-            <caption className="sr-only">
-              Test cases, failures first. Select a row to see its request, response and repro steps.
-            </caption>
-            <thead>
-              <tr className="border-b border-line bg-surface-2 text-left text-xs uppercase tracking-wide text-muted">
-                <th className="px-3 py-2 font-medium">Case</th>
-                <th className="px-3 py-2 font-medium">Name</th>
-                <th className="px-3 py-2 font-medium">Kind</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Severity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map(({ c, index }) => (
-                <tr
-                  key={index}
-                  data-case-row={c.id}
-                  data-status={c.status}
-                  data-kind={c.kind}
-                  /*
-                   * T19 step 1 is "row click opens a detail drawer", so the whole row is the hit
-                   * target — the id cell and the FAIL badge are what a reader aims at, and they
-                   * were dead. The BUTTON is still the accessible control: it is what a screen
-                   * reader announces and what Enter/Space activate, and its click bubbles to here,
-                   * so one handler serves mouse, keyboard and AT alike. Focus is sent to that
-                   * button either way, which is where `close()` returns it.
-                   */
-                  onClick={(e) => {
-                    const button = e.currentTarget.querySelector<HTMLButtonElement>("[data-case-open]");
-                    if (button !== null) {
-                      triggerRef.current = button;
-                      if (document.activeElement !== button) button.focus();
-                    }
-                    setSelected(index);
-                  }}
-                  className={`cursor-pointer border-b border-line last:border-0 ${
-                    c.status === "FAIL" ? "bg-error-bg/40" : ""
-                  } ${selected === index ? "outline outline-2 -outline-offset-2 outline-link" : ""}`}
-                >
-                  <td className="px-3 py-2 align-top font-mono text-xs break-all">{c.id}</td>
-                  <td className="max-w-[28rem] px-3 py-2 align-top">
-                    <button
-                      type="button"
-                      data-case-open
-                      className="w-full cursor-pointer text-left text-link hover:underline break-words"
-                    >
-                      {c.name}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Pill className="bg-surface-2 text-muted ring-1 ring-line">{c.kind}</Pill>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Pill className={STATUS_STYLE[c.status]}>{c.status}</Pill>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {c.status === "FAIL" && c.severity ? (
-                      <Pill className={SEVERITY_STYLE[c.severity] ?? "bg-cancelled-bg text-cancelled-fg"}>
-                        {c.severity}
-                      </Pill>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex min-w-0 flex-col" role="table" aria-label="Test cases, failures first">
+          <div className={`${GRID} border-t-2 border-b border-fg border-b-line py-2.5`} role="row">
+            {["case", "name", "kind", "status", "severity"].map((h) => (
+              <span key={h} className="colhead" role="columnheader">
+                {h}
+              </span>
+            ))}
+          </div>
+
+          {visible.map(({ c, index }) => {
+            const failing = c.status === "FAIL";
+            return (
+              <div
+                key={index}
+                role="row"
+                data-case-row={c.id}
+                data-status={c.status}
+                data-kind={c.kind}
+                /*
+                 * The whole row is the hit target — the id cell and the FAIL mark are what a
+                 * reader aims at, and they were dead. The BUTTON is still the accessible control:
+                 * it is what a screen reader announces and what Enter/Space activate, and its
+                 * click bubbles to here, so one handler serves mouse, keyboard and AT alike.
+                 */
+                onClick={(e) => open(index, e.currentTarget)}
+                className={`${GRID} cursor-pointer items-center border-b border-line py-3.5 transition-colors duration-[180ms] ${
+                  failing ? "bg-danger-tint pl-3 hover:brightness-[0.985]" : "hover:bg-paper-hover"
+                } ${selected === index ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
+                style={failing ? { boxShadow: "inset 3px 0 0 var(--danger)" } : undefined}
+              >
+                <span className="mono min-w-0 text-[10px] break-all" role="cell">
+                  {c.id}
+                </span>
+                <span className="min-w-0" role="cell">
+                  <button
+                    type="button"
+                    data-case-open
+                    className="min-w-0 cursor-pointer text-left text-[12.5px] break-words hover:underline"
+                  >
+                    {c.name}
+                  </button>
+                </span>
+                <span className="min-w-0" role="cell">
+                  <span className="mono inline-block border border-rule-2 px-2 py-[3px] text-[9px] text-ink-2">
+                    {c.kind}
+                  </span>
+                </span>
+                <span className="min-w-0" role="cell">
+                  <CaseStatusMark status={c.status} />
+                </span>
+                <span className="min-w-0" role="cell">
+                  {c.severity ? (
+                    <span className={`statusword ${SEVERITY_INK[c.severity]}`}>{c.severity}</span>
+                  ) : (
+                    <span className="mono text-[9.5px] text-muted">—</span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {openCase ? <CaseDrawer testCase={openCase} onClose={close} /> : null}
+      {openCase !== null ? (
+        <CaseDrawer
+          testCase={openCase}
+          position={position}
+          total={visible.length}
+          onStep={step}
+          onClose={close}
+        />
+      ) : null}
     </section>
   );
 }
 
-function Pill({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function CaseStatusMark({ status }: { status: CaseStatus }) {
   return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${className}`}
-    >
-      {children}
+    <span className={`inline-flex items-center gap-[7px] ${CASE_INK[status]}`}>
+      <span className={`mark ${CASE_MARK[status]}`} aria-hidden />
+      <span className="statusword">{status}</span>
     </span>
   );
 }
@@ -230,8 +250,8 @@ function FilterRow<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <span className="w-12 shrink-0 text-xs uppercase tracking-wide text-muted">{label}</span>
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-[18px] gap-y-1">
+      <span className="colhead w-10 shrink-0">{label}</span>
       {options.map((o) => (
         <button
           key={o.value}
@@ -239,10 +259,10 @@ function FilterRow<T extends string>({
           data-filter={`${label}:${o.value}`}
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition-colors ${
+          className={`statusword cursor-pointer pb-0.5 transition-colors duration-[180ms] ${
             value === o.value
-              ? "border-link bg-surface-2 font-medium text-fg"
-              : "border-line text-muted hover:text-fg"
+              ? "border-b-2 border-fg text-fg"
+              : "text-ink-2 hover:text-fg"
           }`}
         >
           {o.text}
@@ -252,15 +272,32 @@ function FilterRow<T extends string>({
   );
 }
 
+// ---------------------------------------------------------------------------
+// the failure drawer
+// ---------------------------------------------------------------------------
+
 /**
- * The case detail drawer: request, response, repro steps.
+ * The case detail drawer (handoff § 04b-2): a 560px panel docked to the right edge, over a dimmed
+ * page, with the exact request and response and the steps to reproduce.
  *
- * Full-screen on a phone, a right-hand sheet from `sm` up. It deliberately does NOT lock body
- * scroll — `overflow: hidden` on <body> would also make the "does this page scroll sideways"
- * check pass by clipping rather than by fitting, and that check is the one that catches a
- * runaway `<pre>` (see the note at the bottom of globals.css).
+ * It deliberately does NOT lock body scroll — `overflow: hidden` on <body> would also make the
+ * "does this page scroll sideways" check pass by clipping rather than by fitting, and that check
+ * is the one that catches a runaway `<pre>` (see the note at the bottom of globals.css).
  */
-function CaseDrawer({ testCase, onClose }: { testCase: TestCase; onClose: () => void }) {
+function CaseDrawer({
+  testCase,
+  position,
+  total,
+  onStep,
+  onClose,
+}: {
+  testCase: TestCase;
+  /** Index of this case in the visible list, for `case 2 of 6`. */
+  position: number;
+  total: number;
+  onStep: (delta: number) => void;
+  onClose: () => void;
+}) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -273,11 +310,11 @@ function CaseDrawer({ testCase, onClose }: { testCase: TestCase; onClose: () => 
    * Keep Tab inside the panel.
    *
    * `aria-modal="true"` tells a screen reader the rest of the page is inert; without containment
-   * four Tab presses walked out into the feature-history links behind the overlay, so a keyboard
-   * user was navigating content their reader had been told did not exist. A `<dialog>` +
-   * `showModal()` would give this for free, but it also brings the top layer and its own backdrop,
-   * which is a bigger change to a sheet that deliberately does not lock body scroll — so the cycle
-   * is done here, in the ten lines it takes, with no dependency.
+   * four Tab presses walked out into the table behind the overlay, so a keyboard user was
+   * navigating content their reader had been told did not exist. A `<dialog>` + `showModal()`
+   * would give this for free, but it also brings the top layer and its own backdrop, which is a
+   * bigger change to a sheet that deliberately does not lock body scroll — so the cycle is done
+   * here, in the ten lines it takes, with no dependency.
    */
   const trapTab = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "Tab") return;
@@ -311,67 +348,92 @@ function CaseDrawer({ testCase, onClose }: { testCase: TestCase; onClose: () => 
 
   return (
     <div className="fixed inset-0 z-40" data-drawer="open">
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-        aria-hidden
-      />
+      <div className="absolute inset-0 bg-fg/45" onClick={onClose} aria-hidden />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         onKeyDown={trapTab}
-        className="absolute inset-y-0 right-0 flex w-full min-w-0 flex-col border-l border-line bg-surface shadow-2xl sm:max-w-xl"
+        className="shadow-slip-right absolute inset-y-0 right-0 flex w-full max-w-full min-w-0 flex-col border-l border-rule-2 bg-surface sm:w-[560px]"
       >
-        <header className="flex min-w-0 items-start gap-3 border-b border-line px-4 py-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h2 id={titleId} className="min-w-0 text-sm font-semibold break-words">
-              {testCase.name}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="font-mono text-muted break-all">{testCase.id}</span>
-              <Pill className="bg-surface-2 text-muted ring-1 ring-line">{testCase.kind}</Pill>
-              <Pill className={STATUS_STYLE[testCase.status]}>{testCase.status}</Pill>
-              {testCase.severity ? (
-                <Pill className={SEVERITY_STYLE[testCase.severity] ?? "bg-cancelled-bg text-cancelled-fg"}>
-                  {testCase.severity}
-                </Pill>
-              ) : null}
-            </div>
+        <header className="flex min-w-0 items-center justify-between gap-3 border-b-2 border-fg px-[26px] py-[18px]">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="mono min-w-0 text-[11px] break-all">{testCase.id}</span>
+            <span
+              className={`inline-flex shrink-0 items-center gap-[7px] ${CASE_INK[testCase.status]}`}
+            >
+              <span className={`mark ${CASE_MARK[testCase.status]}`} aria-hidden />
+              <span className="statusword">
+                {testCase.status}
+                {testCase.severity ? ` · ${testCase.severity}` : ""}
+              </span>
+            </span>
           </div>
           <button
             ref={closeRef}
             type="button"
             data-drawer-close
             onClick={onClose}
-            className="ml-auto shrink-0 cursor-pointer rounded border border-line px-2 py-1 text-xs text-muted hover:text-fg"
+            aria-label="Close (esc)"
+            title="esc"
+            className="shrink-0 cursor-pointer px-1 text-[13px] text-muted transition-colors duration-[180ms] hover:text-fg"
           >
-            Close
+            ✕
           </button>
         </header>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
-          <Verbatim label="request" value={testCase.request} testId="request" />
-          <Verbatim label="response" value={testCase.response} testId="response" />
+        <div className="flex min-w-0 flex-1 flex-col gap-[22px] overflow-y-auto px-[26px] py-[22px]">
+          <h2 id={titleId} className="min-w-0 text-[17px] leading-[1.4] font-semibold tracking-[-0.02em] break-words">
+            {testCase.name}
+          </h2>
 
-          <section className="flex min-w-0 flex-col gap-2">
-            <h3 className="text-xs uppercase tracking-wide text-muted">repro steps</h3>
+          <Verbatim label="request" value={testCase.request} testId="request" />
+          <Verbatim label="response" value={testCase.response} testId="response" tone="danger" />
+
+          <section className="flex min-w-0 flex-col gap-3">
+            <span className="colhead">repro</span>
             {testCase.reproSteps && testCase.reproSteps.length > 0 ? (
-              <ol
-                data-repro-steps
-                className="ml-5 flex list-decimal flex-col gap-1 text-sm marker:text-muted"
-              >
+              <ol data-repro-steps className="flex min-w-0 flex-col gap-2.5">
                 {testCase.reproSteps.map((step, i) => (
-                  <li key={i} className="min-w-0 break-words">
-                    {step}
+                  <li key={i} className="flex min-w-0 gap-3">
+                    <span className="mono shrink-0 text-[9.5px] text-accent">{i + 1}</span>
+                    <span className="min-w-0 text-[12.5px] leading-[1.55] break-words text-ink-2">
+                      {step}
+                    </span>
                   </li>
                 ))}
               </ol>
             ) : (
-              <p className="text-sm text-muted">None recorded.</p>
+              <p className="text-[12.5px] text-ink-2">None recorded for this case.</p>
             )}
           </section>
+        </div>
+
+        <div className="mt-auto flex min-w-0 items-center justify-between gap-4 border-t border-line px-[26px] py-4">
+          <span className="mono shrink-0 text-[9.5px] text-muted">
+            case {position + 1} of {total}
+          </span>
+          <div className="flex shrink-0 gap-4">
+            <button
+              type="button"
+              data-drawer-prev
+              disabled={position <= 0}
+              onClick={() => onStep(-1)}
+              className="btnlabel text-ink-3 transition-colors duration-[180ms] hover:text-fg disabled:opacity-40"
+            >
+              ← prev
+            </button>
+            <button
+              type="button"
+              data-drawer-next
+              disabled={position < 0 || position >= total - 1}
+              onClick={() => onStep(1)}
+              className="btnlabel transition-colors duration-[180ms] hover:text-accent disabled:opacity-40"
+            >
+              next →
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -379,81 +441,54 @@ function CaseDrawer({ testCase, onClose }: { testCase: TestCase; onClose: () => 
 }
 
 /**
- * One `<pre>` holding a manifest string EXACTLY as it was recorded, plus a copy button.
+ * One `<pre>` holding a manifest string EXACTLY as it was recorded, plus COPY.
  *
  * Three details are load-bearing, and all three are about not lying about the evidence:
  *
  * 1. **`<code>` inside `<pre>`.** The HTML parser drops a newline that immediately follows a
- *    `<pre>` start tag. This page is server-rendered, so a request body beginning with `\n`
- *    would silently lose its first line between the server and the browser. Wrapping the text in
+ *    `<pre>` start tag. This page is server-rendered, so a request body beginning with `\n` would
+ *    silently lose its first line between the server and the browser. Wrapping the text in
  *    `<code>` moves it off that boundary and it survives.
  * 2. **`whitespace-pre`, never `pre-wrap`.** Soft-wrapping does not change `textContent`, but it
- *    does change what a reader believes the bytes were — a wrapped 300-character URL looks like
- *    a multi-line request. It scrolls sideways inside this box instead.
- * 3. **The copy button copies the PROP, not the DOM.** Same string the manifest holds, with no
- *    round trip through selection or `innerText` normalisation.
+ *    does change what a reader believes the bytes were — a wrapped 300-character URL looks like a
+ *    multi-line request. It scrolls sideways INSIDE this box instead, which is also what keeps the
+ *    page itself from moving (handoff § Interactions, the hard overflow rule).
+ * 3. **COPY copies the PROP, not the DOM.** The same string the manifest holds, with no round trip
+ *    through selection or `innerText` normalisation.
  *
  * Escaping needs no special handling and gets none: this is JSX text, so React escapes it. A
- * response containing `<script>` renders as five visible characters and cannot execute.
+ * response containing `<script>` renders as visible characters and cannot execute.
  */
 function Verbatim({
   label,
   value,
   testId,
+  tone = "ink",
 }: {
   label: string;
   value: string | undefined;
   testId: string;
+  /** The response block carries the danger bar; the request keeps the ink one. */
+  tone?: "ink" | "danger";
 }) {
   return (
-    <section className="flex min-w-0 flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <h3 className="text-xs uppercase tracking-wide text-muted">{label}</h3>
-        {value === undefined ? null : <CopyButton value={value} label={label} />}
+    <section className="flex min-w-0 flex-col gap-2.5">
+      <div className="flex min-w-0 items-baseline justify-between gap-3">
+        <span className="colhead">{label}</span>
+        {value === undefined ? null : <CopyButton value={value} />}
       </div>
       {value === undefined ? (
-        <p className="text-sm text-muted">Not recorded for this case.</p>
+        <p className="text-[12.5px] text-ink-2">Not recorded for this case.</p>
       ) : (
         <pre
           data-verbatim={testId}
-          className="max-h-64 min-w-0 overflow-auto rounded border border-line bg-surface-2 p-3 font-mono text-xs leading-relaxed whitespace-pre"
+          className={`mono max-h-64 min-w-0 overflow-auto border-l-[3px] px-[15px] py-[13px] text-[10px] leading-[1.75] whitespace-pre ${
+            tone === "danger" ? "border-danger bg-danger-tint" : "border-fg bg-surface-2"
+          }`}
         >
           <code>{value}</code>
         </pre>
       )}
     </section>
-  );
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (timer.current !== null) clearTimeout(timer.current);
-  }, []);
-
-  return (
-    <button
-      type="button"
-      data-copy={label}
-      className="cursor-pointer rounded border border-line px-2 py-0.5 text-xs text-muted hover:text-fg"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setState("copied");
-        } catch {
-          // Clipboard access can be refused (an insecure origin, a denied permission). Saying so
-          // is better than a button that looks like it worked.
-          setState("failed");
-        }
-        if (timer.current !== null) clearTimeout(timer.current);
-        timer.current = setTimeout(() => setState("idle"), 1500);
-      }}
-    >
-      <span aria-live="polite">
-        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
-      </span>
-    </button>
   );
 }

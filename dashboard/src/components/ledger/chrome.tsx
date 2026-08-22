@@ -8,10 +8,15 @@ import { CopyButtonClient } from "./copy-button";
  * section head, 1px hairlines between rows — so there is no Card component here on purpose.
  */
 
-/** Entry-screen bar: product name left, the local address right, 1px rule under. */
+/*
+ * Entry-screen bar: product name left, the local address right, 1px rule under.
+ * 16px/40px, matching the artboard — the handoff prose says 64px for the entry screen, but the
+ * reference puts the bar and the body on the same 40px gutter so the brand lines up with
+ * CONTENTS, and the artboard is the pixel authority.
+ */
 export function EntryTopBar() {
   return (
-    <header className="flex h-12 items-center justify-between border-b border-line px-8">
+    <header className="flex h-12 items-center justify-between border-b border-line px-10">
       <span className="mono text-[10.5px] font-medium tracking-[0.16em] uppercase">
         agent-workflows
       </span>

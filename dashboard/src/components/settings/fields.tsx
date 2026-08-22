@@ -1,0 +1,350 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { SectionHead } from "@/components/ledger/chrome";
+
+/*
+ * The settings screen's field vocabulary (handoff § 05, § Geometry).
+ *
+ * Fields are UNDERLINES, not boxes: `.field` in globals.css carries the geometry (full width,
+ * no border except a 1px bottom rule, 8px bottom padding, no outline). What it cannot carry is
+ * WHICH colour that rule should be, because the screen has four answers — empty/optional is
+ * `rule`, filled is ink, a row set to `claude-cli` or carrying an error is danger, and focus is
+ * always accent.
+ *
+ * `.field`'s own `:not(:placeholder-shown)` / `:focus` rules are unlayered CSS, and unlayered CSS
+ * beats every Tailwind utility (they live in `@layer utilities`). So the state colours below are
+ * written with Tailwind's `!` modifier, which is the only thing that outranks them — and the
+ * focus colour is `!` too, at one more specificity step (`:focus`), so the accent underline still
+ * wins over the danger one. That ordering is deliberate: the focus signal must never be the thing
+ * that loses (handoff § Accessibility, "never remove outlines without replacing them").
+ */
+
+export type UnderlineState = "empty" | "filled" | "danger";
+
+/** Written out in full so Tailwind's scanner sees every class it has to generate. */
+const UNDERLINE: Record<UnderlineState, string> = {
+  empty: "border-b-line!",
+  filled: "border-b-fg!",
+  danger: "border-b-danger!",
+};
+
+/**
+ * `.field` also fixes `color`, so the ink of a field is the same fight as its underline and needs
+ * the same `!`. Without it every value renders in ink and the danger state is underline-only —
+ * which is exactly the colour-alone signalling the handoff forbids.
+ */
+const INK: Record<UnderlineState, string> = {
+  empty: "text-muted!",
+  filled: "text-fg!",
+  danger: "text-danger!",
+};
+
+/** The accent underline IS the focus signal for a field. */
+const FOCUS = "focus:border-b-accent!";
+
+function stateOf(value: string, danger: boolean): UnderlineState {
+  if (danger) return "danger";
+  return value.trim() === "" ? "empty" : "filled";
+}
+
+const SCALE = {
+  /** Defaults — the two fields the whole config hangs off. */
+  lg: "text-[12px]",
+  /** Everything else. */
+  sm: "text-[11px]",
+} as const;
+
+export type FieldScale = keyof typeof SCALE;
+
+/**
+ * The keyboard focus ring, written as the `outline` SHORTHAND in one arbitrary property rather
+ * than as `outline-2 outline-solid outline-accent`.
+ *
+ * The split utilities do not work here: `outline-color` competes with its own initial value
+ * (`currentColor`, i.e. the button's text colour), and measured on a real button the colour
+ * utility lost — the ring came out paper-on-paper on the ink-filled SAVE button, which is a focus
+ * signal you cannot see. The shorthand sets style, width and colour in one declaration, so there
+ * is nothing left to lose a cascade fight to.
+ */
+const FOCUS_RING =
+  "focus-visible:[outline:2px_solid_var(--accent)] focus-visible:[outline-offset:2px]";
+
+/**
+ * What every button on this screen adds to the foundation's `PrimaryButton` / `OutlineButton` /
+ * `QuietButton`:
+ *
+ * - **A focus ring.** Handoff § Accessibility: "give every interactive element a visible focus
+ *   ring or underline". Fields get the accent underline; a button has nothing to underline, and
+ *   leaving it to the browser's default means relying on a `:focus-visible` heuristic that does
+ *   not fire for programmatic focus and is styled differently per platform. An explicit accent
+ *   ring is the same signal in every case.
+ * - **A ≥44px target on the 375 layout** (§ Accessibility, "Targets"). Above `sm` the constraint
+ *   is dropped so the buttons keep the ~32px the design draws them at.
+ */
+export const ACTION =
+  "inline-flex items-center justify-center min-h-11 sm:min-h-0 " +
+  FOCUS_RING;
+
+/** A single-line underline field. Machine text, so mono by default. */
+export function UnderlineInput({
+  id,
+  value,
+  onChange,
+  placeholder,
+  danger = false,
+  invalid = false,
+  scale = "sm",
+  describedBy,
+  ariaLabel,
+  inputMode,
+  autoComplete,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  /**
+   * Required, not optional: `.field`'s "filled" rule keys off `:placeholder-shown`, so an input
+   * with no placeholder attribute has no empty state at all. Every field on this screen has
+   * something useful to suggest anyway.
+   */
+  placeholder: string;
+  danger?: boolean;
+  invalid?: boolean;
+  scale?: FieldScale;
+  describedBy?: string;
+  ariaLabel?: string;
+  inputMode?: "numeric";
+  autoComplete?: string;
+}) {
+  const state = stateOf(value, danger || invalid);
+  return (
+    <input
+      id={id}
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      inputMode={inputMode}
+      autoComplete={autoComplete}
+      aria-label={ariaLabel}
+      aria-invalid={invalid || undefined}
+      aria-describedby={describedBy}
+      onChange={(event) => onChange(event.target.value)}
+      className={`field mono ${SCALE[scale]} placeholder:text-muted ${INK[state]} ${UNDERLINE[state]} ${FOCUS}`}
+    />
+  );
+}
+
+/** An underline field for a whole-number value that keeps whatever was typed (see ConfigForm). */
+export function UnderlineNumber(props: Omit<Parameters<typeof UnderlineInput>[0], "inputMode">) {
+  return <UnderlineInput {...props} inputMode="numeric" />;
+}
+
+/**
+ * A select drawn as an underline with its own caret. `appearance-none` removes the platform
+ * control (which is a box with a radius, and this design has neither); the `▼` is a
+ * `pointer-events-none` overlay so the whole width still opens the menu.
+ */
+export function UnderlineSelect({
+  id,
+  value,
+  onChange,
+  options,
+  inheritLabel,
+  danger = false,
+  invalid = false,
+  scale = "sm",
+  ariaLabel,
+  describedBy,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: readonly string[];
+  /** The `""` option, when this select is allowed to mean "no override". */
+  inheritLabel?: string;
+  danger?: boolean;
+  invalid?: boolean;
+  scale?: FieldScale;
+  ariaLabel?: string;
+  describedBy?: string;
+}) {
+  const state = stateOf(value, danger || invalid);
+  return (
+    <div className="relative flex w-full min-w-0 items-center">
+      <select
+        id={id}
+        value={value}
+        aria-label={ariaLabel}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
+        onChange={(event) => onChange(event.target.value)}
+        className={`field mono appearance-none pr-5 ${SCALE[scale]} ${INK[state]} ${UNDERLINE[state]} ${FOCUS}`}
+      >
+        {inheritLabel === undefined ? null : <option value="">{inheritLabel}</option>}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute right-0 bottom-[9px] text-[8px] leading-none ${
+          state === "danger" ? "text-danger" : "text-ink-3"
+        }`}
+      >
+        ▼
+      </span>
+    </div>
+  );
+}
+
+/** An underlined multi-line field (the design uses one for feedback in 04c). */
+export function UnderlineTextarea({
+  id,
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+  invalid = false,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  rows?: number;
+  invalid?: boolean;
+}) {
+  const state = stateOf(value, invalid);
+  return (
+    <textarea
+      id={id}
+      rows={rows}
+      value={value}
+      placeholder={placeholder}
+      aria-invalid={invalid || undefined}
+      onChange={(event) => onChange(event.target.value)}
+      className={`field mono resize-y text-[11px] leading-[1.9] placeholder:text-muted ${INK[state]} ${UNDERLINE[state]} ${FOCUS}`}
+    />
+  );
+}
+
+/** Label (small caps mono) above a field, with the field's error underneath it. */
+export function SettingsField({
+  label,
+  note,
+  htmlFor,
+  error,
+  hideLabel = false,
+  children,
+}: {
+  label: string;
+  /** A short mono aside beside the label — "name only, never the value". */
+  note?: string;
+  htmlFor: string;
+  error?: string;
+  /** For a field whose sub-head already names it: the label stays, for screen readers only. */
+  hideLabel?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`flex min-w-0 flex-col ${hideLabel ? "gap-0" : "gap-2.5"}`}>
+      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <label htmlFor={htmlFor} className={hideLabel ? "sr-only" : "label"}>
+          {label}
+        </label>
+        {note === undefined ? null : (
+          <span className="mono text-[9px] text-muted">{note}</span>
+        )}
+      </div>
+      {children}
+      {error === undefined ? null : <FieldError htmlFor={htmlFor}>{error}</FieldError>}
+    </div>
+  );
+}
+
+/**
+ * One field's problem, under that field. Carries the hatched danger square as well as the colour,
+ * so the message is not red-only (handoff § Accessibility).
+ */
+export function FieldError({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
+  return (
+    <p
+      className="flex items-start gap-2 text-[11px] leading-[1.5] text-danger"
+      data-field-error={htmlFor}
+    >
+      <span className="mark mark-error mt-[4px]" aria-hidden />
+      <span className="min-w-0">{children}</span>
+    </p>
+  );
+}
+
+/** The inline danger callout: 3px danger bar on `danger-tint`, hatched square, Archivo copy. */
+export function DangerCallout({
+  children,
+  testId,
+  role = "note",
+}: {
+  children: ReactNode;
+  testId?: string;
+  role?: "note" | "alert";
+}) {
+  return (
+    <div
+      role={role}
+      data-testid={testId}
+      className="flex min-w-0 items-start gap-2.5 border-l-[3px] border-danger bg-danger-tint px-3.5 py-3"
+    >
+      <span className="mark mark-error mt-[5px]" aria-hidden />
+      <div className="min-w-0 text-[12px] leading-[1.55] text-diff-del-ink">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * One of the four ruled sections (handoff § 05). The 2px ink rule comes from `SectionHead`, which
+ * every screen in the panel shares — this only adds the anchor the section index jumps to.
+ */
+export function SettingsSection({
+  id,
+  title,
+  aside,
+  children,
+}: {
+  id: string;
+  title: string;
+  aside: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      id={id}
+      aria-label={title}
+      className="flex min-w-0 scroll-mt-6 flex-col gap-5"
+      data-settings-section={id}
+    >
+      <SectionHead
+        title={title}
+        aside={<span className="mono hidden text-[9.5px] text-muted sm:block">{aside}</span>}
+      />
+      {children}
+    </section>
+  );
+}
+
+/**
+ * A sub-block inside a section: a dotted rule, then a mono small-caps heading. Used for the parts
+ * of the real config the four designed sections do not name (viewports, off-limits, the registry
+ * list, registration) — they keep their section's 2px rule rather than inventing a fifth one.
+ */
+export function SubHead({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="mt-1 flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-dotted border-line pt-5">
+      <span className="label">{children}</span>
+      {aside === undefined ? null : (
+        <span className="mono text-[9.5px] text-muted">{aside}</span>
+      )}
+    </div>
+  );
+}

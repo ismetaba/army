@@ -4,6 +4,7 @@ import type { RunManifest } from "@/lib/store";
 import { formatBytes } from "@/lib/format";
 import { parseUnifiedDiff } from "@/lib/diff";
 import { ReviewPanel } from "@/components/review-panel";
+import { EmptyNote } from "@/components/task-header";
 
 /**
  * Server half of the Review tab: turn `manifest.review` plus the run's `diff.patch` into props.
@@ -29,9 +30,10 @@ export function ReviewTab({ run }: { run: RunManifest }) {
   if (review === undefined) {
     // The page only mounts this tab for `review` runs, and the schema gives those a review block.
     return (
-      <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-        This run recorded no review result.
-      </p>
+      <EmptyNote>
+        This run recorded no review result
+        {run.status === "error" ? " — it ended in an error before the reviewer reported." : "."}
+      </EmptyNote>
     );
   }
 

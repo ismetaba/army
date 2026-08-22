@@ -3,15 +3,34 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { CommandStrip, OutlineButton } from "@/components/ledger/chrome";
+import {
+  ACTION,
+  DangerCallout,
+  FieldError,
+  SettingsField,
+  SettingsSection,
+  SubHead,
+  UnderlineInput,
+} from "@/components/settings/fields";
 
 /**
- * T21 step 2 — the registry half of the settings page: register an existing repo, or forget one.
+ * The fourth ruled section of handoff § 05 — everything about the workspace as a REGISTRY ENTRY,
+ * as opposed to the config file the form above edits.
  *
  * "Forget" is the word on the button on purpose. `DELETE /api/workspaces` removes one line from
  * `$AW_HOME/workspaces.json` and does nothing else — no repo file, no run directory — and the
  * confirm dialog says exactly that, listing the repo and the run count that will still be there
  * afterwards. A button labelled "Delete" next to a repo path would promise something else
  * entirely, and the one thing a destructive-looking control must never do is surprise.
+ *
+ * Rename is the design's other row, and it is the one control on this screen that cannot do its
+ * own work: a workspace's name is its identity in three places at once (the `workspace` key in
+ * `aw.config.json`, the registry entry, and the `$AW_HOME/<name>/` run directory), and the config
+ * patch schema deliberately has no `workspace` key — a panel that could retarget a workspace
+ * would be a way to make the CLI review the wrong repo (`src/lib/config-patch.ts`). So RENAME
+ * opens the two steps that really do it, with the exact command to copy, rather than a field that
+ * would either lie or half-work.
  */
 export interface RegistryRow {
   name: string;
@@ -26,18 +45,38 @@ export interface RegistryRow {
   registered: boolean;
 }
 
-export function WorkspaceRegistry({ workspaces }: { workspaces: RegistryRow[] }) {
+/** Single-quote a path for the copyable command — repo roots have spaces in them. */
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9._\-/]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function WorkspaceRegistry({
+  current,
+  workspaces,
+  registryPath,
+}: {
+  /** The workspace the form above is bound to, or `null` when none is registered yet. */
+  current: RegistryRow | null;
+  workspaces: RegistryRow[];
+  /** `$AW_HOME/workspaces.json` — the file every button in this section edits. */
+  registryPath: string;
+}) {
   const router = useRouter();
   const [forget, setForget] = useState<RegistryRow | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+
   const [name, setName] = useState("");
   const [repoRoot, setRepoRoot] = useState("");
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [registerField, setRegisterField] = useState<string | null>(null);
   const [registered, setRegistered] = useState<string | null>(null);
+
+  const others = workspaces.filter((w) => w.name !== current?.name);
 
   async function doForget() {
     if (forget === null) return;
@@ -89,138 +128,223 @@ export function WorkspaceRegistry({ workspaces }: { workspaces: RegistryRow[] })
     }
   }
 
+  const renameTarget = newName.trim() === "" ? "<new-name>" : newName.trim();
+  const renameCommand =
+    current?.repoRoot === null || current === null
+      ? null
+      : `npx tsx src/cli.ts init --repo ${shellQuote(current.repoRoot)} --name ${renameTarget} --yes`;
+
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-        <div className="flex flex-col gap-0.5">
-          <h3 className="text-sm font-semibold tracking-tight text-fg">Registered workspaces</h3>
-          <p className="text-xs text-muted">
-            <span className="font-mono">workspaces.json</span> is what{" "}
-            <span className="font-mono">--workspace &lt;name&gt;</span> resolves against.
-          </p>
-        </div>
+    <SettingsSection id="workspace" title="Workspace" aside="registry only — the repo is never touched">
+      {current === null ? (
+        <p className="max-w-[62ch] text-[13px] leading-[1.6] text-ink-2">
+          No workspace is registered yet. Register a repo below, or run{" "}
+          <span className="mono text-[11px] text-fg">npx tsx src/cli.ts init</span> inside one.
+        </p>
+      ) : (
+        <>
+          {/* rename ------------------------------------------------------------------ */}
+          <div className="flex min-w-0 flex-col gap-4 border-b border-dotted border-line pb-5">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-6 gap-y-3">
+              <div className="flex min-w-0 max-w-[52ch] flex-col gap-1.5">
+                <h3 className="text-[14px] font-medium tracking-[-0.01em] text-fg">
+                  Rename workspace
+                </h3>
+                <p className="text-[12px] leading-[1.6] text-ink-2">
+                  The name is the identity{" "}
+                  <span className="mono text-[10.5px] text-fg">--workspace</span> resolves against,
+                  so it lives in the config, the registry and the run store at once. The panel
+                  cannot rewrite it for you — it shows you the two steps that do.
+                </p>
+              </div>
+              <OutlineButton
+                type="button"
+                aria-expanded={renameOpen}
+                aria-controls="rename-steps"
+                onClick={() => setRenameOpen((open) => !open)}
+                className={`${ACTION} border-fg! text-fg! hover:bg-fg! hover:text-bg!`}
+              >
+                {renameOpen ? "close" : "rename"}
+              </OutlineButton>
+            </div>
 
-        <div className="min-w-0 overflow-x-auto rounded border border-line">
-          <table className="w-full min-w-[34rem] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-line bg-surface-2 text-left text-xs uppercase tracking-wide text-muted">
-                <th className="px-3 py-2 font-medium">Workspace</th>
-                <th className="px-3 py-2 font-medium">Repo root</th>
-                <th className="px-3 py-2 text-right font-medium">Runs</th>
-                <th className="px-3 py-2 text-right font-medium">Registry</th>
-              </tr>
-            </thead>
-            <tbody>
-              {workspaces.map((w) => (
-                <tr key={w.name} className="border-b border-line last:border-0">
-                  <td className="px-3 py-2 font-mono whitespace-nowrap">{w.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs break-all text-muted">
+            {renameOpen ? (
+              <div id="rename-steps" className="flex min-w-0 flex-col gap-4">
+                <SettingsField label="new name" htmlFor="rename-name">
+                  <UnderlineInput
+                    id="rename-name"
+                    value={newName}
+                    onChange={setNewName}
+                    placeholder={current.name}
+                  />
+                </SettingsField>
+                {renameCommand === null ? null : (
+                  <div className="flex min-w-0 flex-col gap-2.5">
+                    <span className="label">1 · re-run init under the new name</span>
+                    <CommandStrip command={renameCommand} />
+                    <span className="label">2 · forget the old entry</span>
+                    <p className="max-w-[62ch] text-[12px] leading-[1.6] text-ink-2">
+                      Init rewrites the <span className="mono text-[10.5px] text-fg">workspace</span>{" "}
+                      key in <span className="mono text-[10.5px] text-fg">aw.config.json</span> and
+                      adds the new registry entry; the old one is still there. Forget{" "}
+                      <span className="mono text-[10.5px] text-fg">{current.name}</span> below once
+                      the new name shows up. Runs filed under the old name stay in{" "}
+                      <span className="mono text-[10.5px] text-fg">$AW_HOME/{current.name}/</span>.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          {/* forget ------------------------------------------------------------------ */}
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-dotted border-line pb-5">
+            <div className="flex min-w-0 max-w-[52ch] flex-col gap-1.5">
+              <h3 className="text-[14px] font-medium tracking-[-0.01em] text-fg">
+                Forget workspace
+              </h3>
+              <p className="text-[12px] leading-[1.6] text-ink-2">
+                Removes the registry entry, and with it this workspace and its run history from the
+                panel. The repository on disk stays exactly as it is — no file in it is read,
+                written or deleted — and the recorded runs stay in the store.
+              </p>
+            </div>
+            <OutlineButton
+              type="button"
+              danger
+              className={ACTION}
+              onClick={() => {
+                setDialogError(null);
+                setForget(current);
+              }}
+            >
+              forget
+            </OutlineButton>
+          </div>
+        </>
+      )}
+
+      {/* the rest of the registry -------------------------------------------------- */}
+      {others.length === 0 ? null : (
+        <>
+          <SubHead aside={`${others.length} more in workspaces.json`}>other workspaces</SubHead>
+          <ul className="flex min-w-0 flex-col">
+            {others.map((w) => (
+              <li
+                key={w.name}
+                data-registry-row={w.name}
+                // A grid, not a wrapping flex row: repo paths are long enough to consume the whole
+                // line, which pushed the run count and FORGET onto a second row and left-aligned
+                // them. The path now breaks inside its own column and the action stays on the right.
+                className="grid min-w-0 grid-cols-1 items-center gap-x-5 gap-y-2 border-b border-line py-3.5 last:border-b-0 sm:grid-cols-[1fr_auto]"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="mono text-[12px] text-fg">{w.name}</span>
+                  <span className="mono text-[10px] break-all text-muted">
                     {w.repoRoot ?? "— not in workspaces.json"}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted">
-                    {w.runCount}
-                    {w.archivedCount > 0 ? (
-                      <span className="ml-1 text-xs">(+{w.archivedCount} archived)</span>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {w.registered ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDialogError(null);
-                          setForget(w);
-                        }}
-                        className="rounded border border-line px-2 py-1 text-xs text-muted transition-colors hover:border-error-fg hover:text-error-fg"
-                      >
-                        Forget
-                      </button>
-                    ) : (
-                      <span className="text-xs text-muted">not registered</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                  </span>
+                </div>
+                <div className="flex flex-none items-center gap-5 justify-self-start sm:justify-self-end">
+                  <span className="mono text-[9.5px] text-muted">
+                    {w.runCount} run{w.runCount === 1 ? "" : "s"}
+                    {w.archivedCount > 0 ? ` · ${w.archivedCount} archived` : ""}
+                  </span>
+                  {w.registered ? (
+                    <OutlineButton
+                      type="button"
+                      danger
+                      className={ACTION}
+                      onClick={() => {
+                        setDialogError(null);
+                        setForget(w);
+                      }}
+                    >
+                      forget
+                    </OutlineButton>
+                  ) : (
+                    <span className="mono text-[9.5px] text-muted">not registered</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
-      <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-        <div className="flex flex-col gap-0.5">
-          <h3 className="text-sm font-semibold tracking-tight text-fg">Register an existing repo</h3>
-          <p className="text-xs text-muted">
-            The repo must already have a <span className="font-mono">.git</span> and an{" "}
-            <span className="font-mono">aw.config.json</span> — run{" "}
-            <span className="font-mono">npx tsx src/cli.ts init</span> there first. This only adds
-            the entry; it never writes into the repo.
+      {/* register ------------------------------------------------------------------ */}
+      <SubHead aside="adds an entry — nothing is written into the repo">register an existing repo</SubHead>
+      <form onSubmit={doRegister} className="flex min-w-0 flex-col gap-5" data-testid="register-form">
+        <div className="grid min-w-0 grid-cols-1 gap-6 sm:grid-cols-[1.6fr_1fr] sm:gap-8">
+          <SettingsField label="repo folder" htmlFor="register-root">
+            <UnderlineInput
+              id="register-root"
+              value={repoRoot}
+              onChange={setRepoRoot}
+              placeholder="/Users/you/code/my-app"
+              invalid={registerField === "repoRoot"}
+            />
+          </SettingsField>
+          <SettingsField label="name" htmlFor="register-name">
+            <UnderlineInput
+              id="register-name"
+              value={name}
+              onChange={setName}
+              placeholder="my-app"
+              invalid={registerField === "name"}
+            />
+          </SettingsField>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-2.5">
+          <p className="max-w-[62ch] text-[12px] leading-[1.6] text-ink-2">
+            The repo needs a <span className="mono text-[10.5px] text-fg">.git</span> and an{" "}
+            <span className="mono text-[10.5px] text-fg">aw.config.json</span> declaring this name.
+            If it has never been initialised, run this there first:
           </p>
+          <CommandStrip
+            command={`npx tsx src/cli.ts init --repo ${
+              repoRoot.trim() === "" ? "<repo-folder>" : shellQuote(repoRoot.trim())
+            }`}
+          />
         </div>
 
-        <form onSubmit={doRegister} className="flex min-w-0 flex-col gap-3" data-testid="register-form">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[14rem_1fr]">
-            <div className="flex min-w-0 flex-col gap-1">
-              <label htmlFor="register-name" className="text-xs uppercase tracking-wide text-muted">
-                name
-              </label>
-              <input
-                id="register-name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="my-app"
-                className={`w-full min-w-0 rounded border bg-surface px-2 py-1.5 text-sm text-fg outline-none focus:border-link ${
-                  registerField === "name" ? "border-error-fg" : "border-line"
-                }`}
-              />
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label htmlFor="register-root" className="text-xs uppercase tracking-wide text-muted">
-                repo root (absolute path)
-              </label>
-              <input
-                id="register-root"
-                type="text"
-                value={repoRoot}
-                onChange={(e) => setRepoRoot(e.target.value)}
-                placeholder="/Users/you/code/my-app"
-                className={`w-full min-w-0 rounded border bg-surface px-2 py-1.5 font-mono text-sm text-fg outline-none focus:border-link ${
-                  registerField === "repoRoot" ? "border-error-fg" : "border-line"
-                }`}
-              />
-            </div>
-          </div>
-
-          {registerError !== null ? (
-            <p
-              className="rounded border border-line bg-error-bg px-3 py-2 text-sm text-error-fg"
-              role="alert"
-              data-testid="register-error"
-            >
+        {/* The route answers with the field it blames, so its message lands under that field —
+            including the "run aw init first" one for a repo that has never been initialised. */}
+        {registerError !== null ? (
+          registerField === null ? (
+            <DangerCallout role="alert" testId="register-error">
               {registerError}
-            </p>
-          ) : null}
-          {registered !== null ? (
-            <p className="text-sm text-done-fg" data-testid="register-ok">
-              registered {registered}
-            </p>
-          ) : null}
+            </DangerCallout>
+          ) : (
+            <div data-testid="register-error">
+              <FieldError htmlFor={registerField === "name" ? "register-name" : "register-root"}>
+                {registerError}
+              </FieldError>
+            </div>
+          )
+        ) : null}
+        {registered !== null ? (
+          <span className="inline-flex items-center gap-2 text-ok" role="status" data-testid="register-ok">
+            <span className="mark mark-done" aria-hidden />
+            <span className="statusword">registered {registered}</span>
+          </span>
+        ) : null}
 
+        <div className="flex min-w-0 flex-col gap-3 border-t border-line pt-5">
           <div>
-            <button
-              type="submit"
-              className="rounded border border-link bg-surface-2 px-4 py-1.5 text-sm font-medium text-fg transition-colors hover:brightness-105"
-            >
-              Register
-            </button>
+            <OutlineButton type="submit" className={`${ACTION} border-fg! text-fg! hover:bg-fg! hover:text-bg!`}>
+              register
+            </OutlineButton>
           </div>
-        </form>
-      </section>
+          <span className="mono min-w-0 text-[9.5px] break-all text-muted">{registryPath}</span>
+        </div>
+      </form>
 
       {forget !== null ? (
         <ConfirmDialog
           title={`Forget workspace ${forget.name}?`}
           confirmLabel="Remove the registry entry"
+          danger
           busy={busy}
           error={dialogError}
           onCancel={() => {
@@ -247,6 +371,6 @@ export function WorkspaceRegistry({ workspaces }: { workspaces: RegistryRow[] })
           </p>
         </ConfirmDialog>
       ) : null}
-    </div>
+    </SettingsSection>
   );
 }

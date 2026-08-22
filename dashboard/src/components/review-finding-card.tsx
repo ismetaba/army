@@ -1,46 +1,35 @@
-"use client";
-
-import { useEffect, useRef, useState } from "react";
 import type { Finding, Severity } from "@shared/schemas";
+import { CopyButton } from "@/components/ledger/chrome";
+import { SEVERITY_INK, SEVERITY_MARK } from "@/components/verdict";
 
-/**
- * One reviewer finding, and the severity vocabulary the rest of the Review view sorts and
- * filters by.
+/*
+ * One reviewer finding, as the card that sits INLINE UNDER the diff row it names (handoff § 04a).
  *
- * Client-side because of the one interactive thing on the card: the Fix block copies to the
- * clipboard. Everything else here is static markup that could have been rendered on the server,
- * and is kept in this file only so the card and its badge cannot drift apart.
+ * Presentational — the only interactive thing on it is COPY, which is the shared client button
+ * from `ledger/chrome`, so this file itself is server-renderable and ships no JS of its own.
+ *
+ * Every string on the card (`title`, `risk`, `fix`, `file`) is agent-written and therefore
+ * untrusted (SPEC § Dashboard security invariants #3). All four are JSX text children, so React
+ * escapes them: a finding whose title is `<script>…` renders as visible characters and cannot
+ * execute. Nothing here builds a link or a fetch out of them.
  */
 
 /**
- * SPEC § Types, in descending order — the class map below IS the vocabulary, and its declaration
- * order IS the sort order and the chip order.
+ * The card's own tint.
  *
- * Written out in full, never composed — Tailwind ships only the class names it can literally see
- * in the source, so `bg-[var(--sev-${severity}-bg)]` would compile to nothing at all.
- *
- * `Record<Severity, string>` is also the completeness guard `store.ts` argues for with
- * `RUN_KINDS = RunManifest.shape.kind.options`: a fifth severity added to the SPEC enum makes
- * THIS object a type error (a missing key) rather than quietly losing its badge, its chip and its
- * place in the sort. Deriving `SEVERITIES` from its keys, instead of hand-copying the list a
- * second time, is what extends that guard to the ordering — and it does so without a value import
- * from `@shared/schemas`, which would pull zod into this `"use client"` bundle for four strings.
+ * The reference draws the (MAJOR) example on a rose card; painting a NIT the same colour would be
+ * exactly the "learn to ignore red" failure the report tab's severity notes warn about, so the
+ * tint follows the severity and the mark + word carry the meaning either way.
  */
-const SEVERITY_CLASS: Record<Severity, string> = {
-  BLOCKER: "bg-[var(--sev-blocker-bg)] text-[var(--sev-blocker-fg)]",
-  MAJOR: "bg-[var(--sev-major-bg)] text-[var(--sev-major-fg)]",
-  MINOR: "bg-[var(--sev-minor-bg)] text-[var(--sev-minor-fg)]",
-  NIT: "bg-[var(--sev-nit-bg)] text-[var(--sev-nit-fg)]",
+const CARD_TINT: Record<Severity, string> = {
+  BLOCKER: "bg-danger-tint",
+  MAJOR: "bg-danger-tint",
+  MINOR: "bg-warn-tint",
+  NIT: "bg-surface-2",
 };
 
-export const SEVERITIES: readonly Severity[] = Object.keys(SEVERITY_CLASS) as Severity[];
-
-export function severityRank(severity: Severity): number {
-  const i = SEVERITIES.indexOf(severity);
-  return i === -1 ? SEVERITIES.length : i;
-}
-
-export function SeverityBadge({
+/** The severity mark and its word — never a bare coloured square (handoff § Accessibility). */
+export function SeverityLine({
   severity,
   className = "",
 }: {
@@ -48,10 +37,9 @@ export function SeverityBadge({
   className?: string;
 }) {
   return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wide ${SEVERITY_CLASS[severity]} ${className}`}
-    >
-      {severity}
+    <span className={`inline-flex shrink-0 items-center gap-2 ${SEVERITY_INK[severity]} ${className}`}>
+      <span className={`mark ${SEVERITY_MARK[severity]}`} aria-hidden />
+      <span className="statusword">{severity}</span>
     </span>
   );
 }
@@ -60,108 +48,54 @@ export function FindingCard({
   finding,
   domId,
   focused = false,
-  showLocation = true,
 }: {
   finding: Finding;
-  /** Anchor the sidebar scrolls to. Unique across the page. */
+  /** The anchor the jump-list scrolls to. Unique across the page. */
   domId: string;
   focused?: boolean;
-  /** The diff row above the card already says where this is; the unanchored list does not. */
-  showLocation?: boolean;
 }) {
   return (
     <article
       id={domId}
-      // `scroll-mt-16` keeps the card clear of the sticky site header when it is scrolled to.
-      className={`scroll-mt-16 rounded-lg border bg-surface p-3 shadow-sm transition-colors ${
-        focused ? "border-[var(--review-focus)] ring-2 ring-[var(--review-focus)]" : "border-line"
-      }`}
+      data-finding-card={finding.severity}
+      // `scroll-mt-16` keeps the card clear of the top of the diff panel when it is scrolled to.
+      className={`flex min-w-0 scroll-mt-16 flex-col gap-3 border border-rule-2 px-[18px] py-4 ${
+        CARD_TINT[finding.severity]
+      } ${focused ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
     >
-      <header className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <SeverityBadge severity={finding.severity} />
-        <h4 className="min-w-0 grow text-sm font-semibold break-words">{finding.title}</h4>
-        {showLocation ? (
-          <span className="font-mono text-xs break-all text-muted">
-            {finding.file}:{finding.line}
-          </span>
-        ) : null}
+      <header className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+        <SeverityLine severity={finding.severity} />
+        <span className="mono min-w-0 text-[9px] break-all text-muted">
+          {finding.file}:{finding.line}
+        </span>
       </header>
 
-      <p className="mt-2 text-sm break-words">
-        <span className="font-semibold text-muted">Risk: </span>
-        {finding.risk}
-      </p>
+      <h4 className="min-w-0 text-[16px] font-semibold tracking-[-0.02em] break-words">
+        {finding.title}
+      </h4>
 
-      <div className="mt-2 flex flex-col gap-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold text-muted">Fix</span>
+      <div className="flex min-w-0 gap-3">
+        <span className="colhead w-[34px] shrink-0 pt-[3px]">risk</span>
+        <p className="min-w-0 flex-1 text-[13px] leading-[1.6] break-words text-ink-2 [text-wrap:pretty]">
+          {finding.risk}
+        </p>
+      </div>
+
+      {/*
+       * The fix is the thing you lift into an editor, so it is the copy block — and it is the
+       * ONLY place the fix text appears, rather than prose plus a duplicate snippet. SPEC § Types
+       * gives `Finding` a single `fix` string; there is no separate one-line snippet field to put
+       * in the strip beside a paragraph, so the paragraph IS the strip.
+       */}
+      <div className="flex min-w-0 gap-3">
+        <span className="colhead w-[34px] shrink-0 pt-[3px]">fix</span>
+        <div className="cmd-strip flex min-w-0 flex-1 items-start justify-between gap-3 px-3 py-2.5">
+          <p className="min-w-0 flex-1 text-[13px] leading-[1.6] break-words text-ink-2 [text-wrap:pretty]">
+            {finding.fix}
+          </p>
           <CopyButton value={finding.fix} />
         </div>
-        {/* The fix is meant to be lifted into an editor, so it is a copy block, not prose:
-            monospace, wrapping (a fix can be a long sentence) and never widening the card. */}
-        <pre className="overflow-x-auto rounded border border-line bg-surface-2 p-2 font-mono text-xs whitespace-pre-wrap">
-          {finding.fix}
-        </pre>
       </div>
     </article>
-  );
-}
-
-type CopyState = "idle" | "copied" | "failed";
-
-/**
- * Copy-to-clipboard with a real fallback.
- *
- * `navigator.clipboard` needs a secure context; `http://localhost:4400` IS one, so the async API
- * is the normal path. It is still absent when the panel is opened over a LAN address (`next dev`
- * prints one), which is exactly the case the deprecated `execCommand` path covers. A button that
- * silently did nothing there would be worse than either.
- */
-function CopyButton({ value }: { value: string }) {
-  const [state, setState] = useState<CopyState>("idle");
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-    };
-  }, []);
-
-  const flash = (next: CopyState) => {
-    setState(next);
-    if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setState("idle"), 1600);
-  };
-
-  const copy = async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-        flash("copied");
-        return;
-      }
-      const area = document.createElement("textarea");
-      area.value = value;
-      area.setAttribute("readonly", "");
-      area.style.position = "fixed";
-      area.style.opacity = "0";
-      document.body.appendChild(area);
-      area.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(area);
-      flash(ok ? "copied" : "failed");
-    } catch {
-      flash("failed");
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={copy}
-      className="rounded border border-line px-2 py-0.5 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg"
-    >
-      {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
-    </button>
   );
 }
