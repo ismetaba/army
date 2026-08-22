@@ -58,33 +58,32 @@ const SCALE = {
 export type FieldScale = keyof typeof SCALE;
 
 /**
- * The keyboard focus ring, written as the `outline` SHORTHAND in one arbitrary property rather
- * than as `outline-2 outline-solid outline-accent`.
+ * The keyboard focus ring for an action.
  *
- * The split utilities do not work here: `outline-color` competes with its own initial value
- * (`currentColor`, i.e. the button's text colour), and measured on a real button the colour
- * utility lost — the ring came out paper-on-paper on the ink-filled SAVE button, which is a focus
- * signal you cannot see. The shorthand sets style, width and colour in one declaration, so there
- * is nothing left to lose a cascade fight to.
+ * Handoff § Accessibility: "give every interactive element a visible focus ring or underline …
+ * never remove outlines without replacing them". Fields get the accent underline; a button has
+ * nothing to underline, so it gets a 2px accent ring at 2px offset.
+ *
+ * Written as the `outline` SHORTHAND in one arbitrary property rather than as `outline-2
+ * outline-solid outline-accent`, so style, width and colour arrive together and `outline-color`
+ * never has to win a cascade fight against its own initial value (`currentColor`, i.e. the
+ * button's text — which on the ink-filled SAVE button is paper, and a paper ring on paper is not
+ * a focus signal). The foundation's buttons carry `transition-colors`, which in Tailwind v4
+ * includes `outline-color`, so the ring fades in with the rest of the hover/focus colours.
  */
 const FOCUS_RING =
   "focus-visible:[outline:2px_solid_var(--accent)] focus-visible:[outline-offset:2px]";
 
 /**
  * What every button on this screen adds to the foundation's `PrimaryButton` / `OutlineButton` /
- * `QuietButton`:
- *
- * - **A focus ring.** Handoff § Accessibility: "give every interactive element a visible focus
- *   ring or underline". Fields get the accent underline; a button has nothing to underline, and
- *   leaving it to the browser's default means relying on a `:focus-visible` heuristic that does
- *   not fire for programmatic focus and is styled differently per platform. An explicit accent
- *   ring is the same signal in every case.
- * - **A ≥44px target on the 375 layout** (§ Accessibility, "Targets"). Above `sm` the constraint
- *   is dropped so the buttons keep the ~32px the design draws them at.
+ * `QuietButton`: the focus ring above, and a ≥44px target on the 375 layout (handoff
+ * § Accessibility, "Targets"). Above `sm` the height constraint is dropped so the buttons keep
+ * the ~32px the design draws them at.
  */
-export const ACTION =
-  "inline-flex items-center justify-center min-h-11 sm:min-h-0 " +
-  FOCUS_RING;
+export const ACTION = `inline-flex items-center justify-center min-h-11 sm:min-h-0 ${FOCUS_RING}`;
+
+/** The same, for a button that is only a word and has no box (`RELOAD FROM DISK`). */
+export const QUIET_ACTION = `inline-flex items-center min-h-11 sm:min-h-0 ${FOCUS_RING}`;
 
 /** A single-line underline field. Machine text, so mono by default. */
 export function UnderlineInput({

@@ -153,66 +153,75 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
           {cases.length === 0 ? "This report has no cases." : "No case matches these filters."}
         </EmptyNote>
       ) : (
-        <div className="flex min-w-0 flex-col" role="table" aria-label="Test cases, failures first">
-          <div className={`${GRID} border-t-2 border-b border-fg border-b-line py-2.5`} role="row">
-            {["case", "name", "kind", "status", "severity"].map((h) => (
-              <span key={h} className="colhead" role="columnheader">
-                {h}
-              </span>
-            ))}
-          </div>
+        // Five columns do not fit a phone, so the TABLE scrolls sideways inside this box rather
+        // than the page doing it (handoff § Interactions, the hard overflow rule). `min-w-0` on
+        // the wrapper is what stops a flex parent from letting it push the body wide instead.
+        <div className="min-w-0 overflow-x-auto">
+          <div
+            className="flex min-w-[620px] flex-col"
+            role="table"
+            aria-label="Test cases, failures first"
+          >
+            <div className={`${GRID} border-t-2 border-b border-fg border-b-line py-2.5`} role="row">
+              {["case", "name", "kind", "status", "severity"].map((h) => (
+                <span key={h} className="colhead" role="columnheader">
+                  {h}
+                </span>
+              ))}
+            </div>
 
-          {visible.map(({ c, index }) => {
-            const failing = c.status === "FAIL";
-            return (
-              <div
-                key={index}
-                role="row"
-                data-case-row={c.id}
-                data-status={c.status}
-                data-kind={c.kind}
-                /*
-                 * The whole row is the hit target — the id cell and the FAIL mark are what a
-                 * reader aims at, and they were dead. The BUTTON is still the accessible control:
-                 * it is what a screen reader announces and what Enter/Space activate, and its
-                 * click bubbles to here, so one handler serves mouse, keyboard and AT alike.
-                 */
-                onClick={(e) => open(index, e.currentTarget)}
-                className={`${GRID} cursor-pointer items-center border-b border-line py-3.5 transition-colors duration-[180ms] ${
-                  failing ? "bg-danger-tint pl-3 hover:brightness-[0.985]" : "hover:bg-paper-hover"
-                } ${selected === index ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
-                style={failing ? { boxShadow: "inset 3px 0 0 var(--danger)" } : undefined}
-              >
-                <span className="mono min-w-0 text-[10px] break-all" role="cell">
-                  {c.id}
-                </span>
-                <span className="min-w-0" role="cell">
-                  <button
-                    type="button"
-                    data-case-open
-                    className="min-w-0 cursor-pointer text-left text-[12.5px] break-words hover:underline"
-                  >
-                    {c.name}
-                  </button>
-                </span>
-                <span className="min-w-0" role="cell">
-                  <span className="mono inline-block border border-rule-2 px-2 py-[3px] text-[9px] text-ink-2">
-                    {c.kind}
+            {visible.map(({ c, index }) => {
+              const failing = c.status === "FAIL";
+              return (
+                <div
+                  key={index}
+                  role="row"
+                  data-case-row={c.id}
+                  data-status={c.status}
+                  data-kind={c.kind}
+                  /*
+                   * The whole row is the hit target — the id cell and the FAIL mark are what a
+                   * reader aims at, and they were dead. The BUTTON is still the accessible control:
+                   * it is what a screen reader announces and what Enter/Space activate, and its
+                   * click bubbles to here, so one handler serves mouse, keyboard and AT alike.
+                   */
+                  onClick={(e) => open(index, e.currentTarget)}
+                  className={`${GRID} cursor-pointer items-center border-b border-line py-3.5 transition-colors duration-[180ms] ${
+                    failing ? "bg-danger-tint pl-3 hover:brightness-[0.985]" : "hover:bg-paper-hover"
+                  } ${selected === index ? "outline outline-2 -outline-offset-2 outline-accent" : ""}`}
+                  style={failing ? { boxShadow: "inset 3px 0 0 var(--danger)" } : undefined}
+                >
+                  <span className="mono min-w-0 text-[10px] break-all" role="cell">
+                    {c.id}
                   </span>
-                </span>
-                <span className="min-w-0" role="cell">
-                  <CaseStatusMark status={c.status} />
-                </span>
-                <span className="min-w-0" role="cell">
-                  {c.severity ? (
-                    <span className={`statusword ${SEVERITY_INK[c.severity]}`}>{c.severity}</span>
-                  ) : (
-                    <span className="mono text-[9.5px] text-muted">—</span>
-                  )}
-                </span>
-              </div>
-            );
-          })}
+                  <span className="min-w-0" role="cell">
+                    <button
+                      type="button"
+                      data-case-open
+                      className="min-w-0 cursor-pointer text-left text-[12.5px] break-words hover:underline"
+                    >
+                      {c.name}
+                    </button>
+                  </span>
+                  <span className="min-w-0" role="cell">
+                    <span className="mono inline-block border border-rule-2 px-2 py-[3px] text-[9px] text-ink-2">
+                      {c.kind}
+                    </span>
+                  </span>
+                  <span className="min-w-0" role="cell">
+                    <CaseStatusMark status={c.status} />
+                  </span>
+                  <span className="min-w-0" role="cell">
+                    {c.severity ? (
+                      <span className={`statusword ${SEVERITY_INK[c.severity]}`}>{c.severity}</span>
+                    ) : (
+                      <span className="mono text-[9.5px] text-muted">—</span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -348,7 +357,7 @@ function CaseDrawer({
 
   return (
     <div className="fixed inset-0 z-40" data-drawer="open">
-      <div className="absolute inset-0 bg-fg/45" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-bg/60" onClick={onClose} aria-hidden />
       <div
         ref={panelRef}
         role="dialog"
@@ -377,7 +386,7 @@ function CaseDrawer({
             onClick={onClose}
             aria-label="Close (esc)"
             title="esc"
-            className="shrink-0 cursor-pointer px-1 text-[13px] text-muted transition-colors duration-[180ms] hover:text-fg"
+            className="shrink-0 cursor-pointer px-1 text-[13px] text-muted transition-colors duration-[180ms] outline-accent hover:text-fg"
           >
             ✕
           </button>

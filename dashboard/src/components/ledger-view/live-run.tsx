@@ -11,7 +11,7 @@
  *
  * The machinery is the existing panel's, deliberately unchanged in behaviour:
  *
- *   - the 5 s poll of `/api/runs?ws=` with a digest and `router.refresh()`, from `run-poller.tsx`.
+ *   - the 5 s poll of `/api/runs?ws=` with a digest and `router.refresh()`.
  *     The TABLE stays server-rendered from the store; this only decides WHEN to re-read it, so the
  *     panel keeps one idea of what a run is.
  *   - the `/api/logs` SSE tail with an explicit `close()` on `end`, from `live-log.tsx`. An

@@ -7,6 +7,7 @@ import type { FieldIssue } from "@/lib/config-patch";
 import { PrimaryButton, QuietButton } from "@/components/ledger/chrome";
 import {
   ACTION,
+  QUIET_ACTION,
   DangerCallout,
   FieldError,
   SettingsField,
@@ -558,7 +559,7 @@ export function ConfigForm({
             type="button"
             onClick={() => void reload()}
             disabled={status.kind === "saving"}
-            className={ACTION}
+            className={QUIET_ACTION}
           >
             reload from disk
           </QuietButton>

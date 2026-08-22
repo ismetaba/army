@@ -395,6 +395,23 @@ function Recording({ href }: { href: string }) {
   const [at, setAt] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  /**
+   * Read the element's own state when React attaches to it, not only from its events.
+   *
+   * The `<video>` is server-rendered with its `src`, so the browser starts loading it immediately
+   * and `loadedmetadata` has usually already fired by the time hydration attaches a listener —
+   * which left the scrub bar reading `00:00 / 00:00` for a video that was fully loaded. Reading
+   * the node on attach closes that window; `onDurationChange` catches the other case, a webm whose
+   * duration only resolves after the first frames.
+   */
+  const attach = useCallback((node: HTMLVideoElement | null) => {
+    video.current = node;
+    if (node === null) return;
+    if (Number.isFinite(node.duration)) setDuration(node.duration);
+    setAt(node.currentTime);
+    setPlaying(!node.paused);
+  }, []);
+
   const seek = (seconds: number) => {
     const node = video.current;
     if (node === null || !Number.isFinite(duration) || duration <= 0) return;
@@ -428,7 +445,7 @@ function Recording({ href }: { href: string }) {
 
       <div className="relative h-[300px] w-[690px] max-w-full min-w-0 border border-line bg-surface-2">
         <video
-          ref={video}
+          ref={attach}
           src={href}
           preload="metadata"
           playsInline
@@ -438,9 +455,12 @@ function Recording({ href }: { href: string }) {
           onPause={() => setPlaying(false)}
           onEnded={() => setPlaying(false)}
           onTimeUpdate={(e) => setAt(e.currentTarget.currentTime)}
-          onLoadedMetadata={(e) =>
-            setDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)
-          }
+          onLoadedMetadata={(e) => {
+            if (Number.isFinite(e.currentTarget.duration)) setDuration(e.currentTarget.duration);
+          }}
+          onDurationChange={(e) => {
+            if (Number.isFinite(e.currentTarget.duration)) setDuration(e.currentTarget.duration);
+          }}
           className="h-full w-full cursor-pointer object-contain"
         />
 

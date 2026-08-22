@@ -74,8 +74,10 @@ export function FindingCard({
         {finding.title}
       </h4>
 
-      <div className="flex min-w-0 gap-3">
-        <span className="colhead w-[34px] shrink-0 pt-[3px]">risk</span>
+      {/* Label beside the prose where there is room, above it on a phone — a 34px label column
+          plus a 58px card indent leaves a two-word-wide paragraph at 375. */}
+      <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:gap-3">
+        <span className="colhead shrink-0 sm:w-[34px] sm:pt-[3px]">risk</span>
         <p className="min-w-0 flex-1 text-[13px] leading-[1.6] break-words text-ink-2 [text-wrap:pretty]">
           {finding.risk}
         </p>
@@ -87,8 +89,8 @@ export function FindingCard({
        * gives `Finding` a single `fix` string; there is no separate one-line snippet field to put
        * in the strip beside a paragraph, so the paragraph IS the strip.
        */}
-      <div className="flex min-w-0 gap-3">
-        <span className="colhead w-[34px] shrink-0 pt-[3px]">fix</span>
+      <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:gap-3">
+        <span className="colhead shrink-0 sm:w-[34px] sm:pt-[3px]">fix</span>
         <div className="cmd-strip flex min-w-0 flex-1 items-start justify-between gap-3 px-3 py-2.5">
           <p className="min-w-0 flex-1 text-[13px] leading-[1.6] break-words text-ink-2 [text-wrap:pretty]">
             {finding.fix}

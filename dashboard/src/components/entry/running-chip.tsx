@@ -25,7 +25,7 @@ export function RunningChip({ since }: { since: string }) {
     // The first reading is a task rather than part of the effect body: setting state synchronously
     // there is a cascading render (and what `react-hooks/set-state-in-effect` is about). A
     // zero-delay timeout is the same "start the clock now" with the render out of the way — the
-    // pattern `run-poller.tsx` already uses for its own first poll.
+    // pattern the ledger's live-run poll uses for its own first poll.
     const immediate = setTimeout(() => setNow(Date.now()), 0);
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => {

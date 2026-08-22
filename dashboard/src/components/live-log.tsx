@@ -302,9 +302,13 @@ export function LiveLog({
             <Link
               href={`/ws/${encodeURIComponent(ws)}/run/${encodeURIComponent(runId)}`}
               data-live-run-link
+              // The label is `.btnlabel`, which UPPERCASES — so the run id goes in the title, not
+              // in the text: a mono id is not a thing to shout, and casing it is a lie about the
+              // string.
+              title={runId}
               className="btnlabel text-accent transition-colors duration-[180ms] hover:text-accent-hover"
             >
-              open {runId}
+              open run →
             </Link>
           ) : null}
         </div>

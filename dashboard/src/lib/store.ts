@@ -4,7 +4,7 @@
  * SERVER ONLY. Every function here touches `node:fs`, so this module must never be reached from
  * a `"use client"` component — the import of `node:fs` makes that a hard build error rather than
  * a subtle leak, which is the guarantee we want. Client components in `src/app/settings/` and
- * `src/components/run-actions.tsx` reach these functions only through the API routes; data for a
+ * `src/components/ledger-view/row-actions.tsx` reach these functions only through the API routes; data for a
  * first render is read in server components and passed down as plain values.
  *
  * Why re-implement instead of importing the toolkit's `src/store.ts`: that module is node-only by

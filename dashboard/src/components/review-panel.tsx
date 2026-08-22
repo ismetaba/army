@@ -449,7 +449,12 @@ function FileSection({
                 <DiffRows rows={segment.rows} />
               </div>
             ) : (
-              <div key={segment.key} className="flex min-w-0 flex-col gap-2.5 py-3 pr-2.5 pl-[58px]">
+              <div
+                key={segment.key}
+                // Indented to the code column so the card reads as belonging to the row above it —
+                // but not at 375, where 58px of indent is a fifth of the panel.
+                className="flex min-w-0 flex-col gap-2.5 py-3 pr-2.5 pl-2.5 sm:pl-[58px]"
+              >
                 {segment.findings.map((item) => (
                   <FindingCard
                     key={item.domId}

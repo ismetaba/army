@@ -8,7 +8,7 @@
  *
  *   - `dashboard/src/lib/runner.ts` (server) builds the argv it hands to `spawn`;
  *   - `dashboard/src/app/api/trigger/route.ts` validates the POST body;
- *   - `dashboard/src/components/new-run-modal.tsx` (client) renders one field per spec entry and
+ *   - `dashboard/src/components/ledger-view/create-task-slip.tsx` renders one field per spec entry and
  *     re-checks it before posting, so a typo is an error message instead of a round trip.
  *
  * Two properties are the whole point, and both come from `FIELDS` being the only thing the
