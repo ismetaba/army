@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#e8e3d8; font-family:'Archivo',system-ui,sans-serif; }
+  a { color:#b4531f; text-decoration:none; }
+  a:hover { color:#8e3f16; }
+  @keyframes caret { 0%,45% { opacity:1 } 50%,100% { opacity:0 } }
+  @keyframes rise { from { opacity:0; transform:translateY(5px) } to { opacity:1; transform:none } }
+  @keyframes tick { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+  @keyframes draw { from { transform:scaleX(0) } to { transform:scaleX(1) } }
+  @keyframes stamp { 0% { opacity:0; transform:scale(1.7) rotate(-9deg) } 55% { opacity:1; transform:scale(.93) rotate(-2deg) } 100% { opacity:1; transform:scale(1) rotate(-3deg) } }
+  @keyframes flip { from { opacity:0; transform:translateY(-5px) } to { opacity:1; transform:none } }
+</style>
+</helmet>
+
+<div style="display:flex;flex-direction:column;gap:80px;padding:64px 64px 140px;background:#e8e3d8;min-height:100vh;box-sizing:border-box;align-items:flex-start">
+
+  <div style="display:flex;flex-direction:column;gap:12px;max-width:840px">
+    <div style="font:500 11px 'Martian Mono';color:#b4531f;letter-spacing:0.14em">A COMPLETELY DIFFERENT TAKE</div>
+    <div style="font:600 26px 'Archivo';color:#17150f;letter-spacing:-0.025em">The ledger</div>
+    <div style="font:400 14px/1.7 'Archivo';color:#5c564a;text-wrap:pretty">Paper instead of a console. Warm white, ink black, one burnt-orange mark, rules instead of boxes, and a table of contents where the workspace grid used to be. Runs are entries in a ledger — numbered, timed in the margin, ruled off from each other. The live run still ticks, but it reads like an entry being written rather than a dashboard blinking.</div>
+  </div>
+
+  <!-- 01 ENTRY -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">01 · ENTRY</div>
+      <div style="font:400 10px 'Martian Mono';color:#8a8378">1440</div>
+    </div>
+
+    <div data-screen-label="01 entry" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 40px;border-bottom:1px solid #ddd6c8">
+        <div style="font:500 10px 'Martian Mono';color:#17150f;letter-spacing:0.16em">AGENT-WORKFLOWS</div>
+        <div style="font:400 10px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">LOCAL · 127.0.0.1:4400</div>
+      </div>
+
+      <div style="display:flex;padding:72px 40px 80px">
+        <div style="width:200px;flex:none;padding-top:10px">
+          <div style="font:500 10px 'Martian Mono';color:#b4531f;letter-spacing:0.14em">CONTENTS</div>
+          <div style="font:400 11px/1.7 'Martian Mono';color:#8a8378;letter-spacing:-0.02em;margin-top:12px">three<br>repositories</div>
+        </div>
+
+        <div style="flex:1;min-width:0;max-width:900px">
+          <div style="font:600 46px/1.05 'Archivo';color:#17150f;letter-spacing:-0.035em">Open a workspace</div>
+          <div style="font:400 15px/1.65 'Archivo';color:#5c564a;max-width:520px;margin-top:14px;text-wrap:pretty">One workspace is one repository. Every run, result and artifact for that repo is filed inside it.</div>
+
+          <div style="margin-top:44px"><div style="height:2px;background:#17150f;transform-origin:left;animation:draw .85s cubic-bezier(.2,.8,.3,1)"></div>
+
+            <div style="display:flex;align-items:baseline;gap:20px;padding:22px 0 20px;border-bottom:1px solid #ddd6c8;transition:background .18s,padding .18s" style-hover="background:#f2ede2">
+              <div style="font:400 11px 'Martian Mono';color:#b4531f;letter-spacing:-0.02em;width:26px;flex:none">01</div>
+              <div style="display:flex;flex-direction:column;gap:8px;flex:none">
+                <div style="font:500 24px 'Archivo';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+                <div style="font:400 10.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">/Users/deniz/code/gold-token</div>
+              </div>
+              <div style="flex:1;border-bottom:1px dotted #c9c1b0;transform:translateY(-4px)"></div>
+              <div style="display:flex;align-items:center;gap:22px;flex:none">
+                <div style="display:flex;align-items:center;gap:8px;border:1px solid #b4531f;padding:4px 9px">
+                  <div style="width:7px;height:7px;background:#b4531f;animation:tick 1.4s ease-in-out infinite"></div>
+                  <div style="font:500 9.5px 'Martian Mono';color:#b4531f;letter-spacing:0.06em">RUNNING {{ elapsed }}</div>
+                </div>
+                <div style="font:400 10.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em;width:120px;text-align:right">1 task · 5m ago</div>
+                <div style="font:400 16px 'Archivo';color:#b4531f;transition:transform .2s" style-hover="transform:translateX(4px)">→</div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:baseline;gap:20px;padding:22px 0 20px;border-bottom:1px solid #ddd6c8;transition:background .18s,padding .18s" style-hover="background:#f2ede2">
+              <div style="font:400 11px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em;width:26px;flex:none">02</div>
+              <div style="display:flex;flex-direction:column;gap:8px;flex:none">
+                <div style="font:500 24px 'Archivo';color:#17150f;letter-spacing:-0.02em">fixture</div>
+                <div style="font:400 10.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">/Users/deniz/code/fixture</div>
+              </div>
+              <div style="flex:1;border-bottom:1px dotted #c9c1b0;transform:translateY(-4px)"></div>
+              <div style="display:flex;align-items:center;gap:22px;flex:none">
+                <div style="font:400 10.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em;width:120px;text-align:right">7 tasks · 2d ago</div>
+                <div style="font:400 16px 'Archivo';color:#c4bcaa">→</div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:baseline;gap:20px;padding:22px 0 20px;border-bottom:1px solid #ddd6c8;transition:background .18s,padding .18s" style-hover="background:#f2ede2">
+              <div style="font:400 11px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em;width:26px;flex:none">03</div>
+              <div style="display:flex;flex-direction:column;gap:8px;flex:none">
+                <div style="font:500 24px 'Archivo';color:#17150f;letter-spacing:-0.02em">scratch</div>
+                <div style="font:400 10.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">/Users/deniz/code/scratch</div>
+              </div>
+              <div style="flex:1;border-bottom:1px dotted #c9c1b0;transform:translateY(-4px)"></div>
+              <div style="display:flex;align-items:center;gap:22px;flex:none">
+                <div style="font:400 10.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em;width:120px;text-align:right">no tasks</div>
+                <div style="font:400 16px 'Archivo';color:#c4bcaa">→</div>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:20px 0">
+              <div style="display:flex;align-items:baseline;gap:20px">
+                <div style="font:400 11px 'Martian Mono';color:#b4531f;width:26px;flex:none">+</div>
+                <div style="font:500 20px 'Archivo';color:#b4531f;letter-spacing:-0.02em">Add workspace</div>
+                <div style="font:400 10.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">point at a repo folder</div>
+              </div>
+              <div style="font:400 9.5px 'Martian Mono';color:#6b6459;border:1px solid #d6cfc0;padding:4px 8px;letter-spacing:-0.02em">⌘N</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 01b FIRST LAUNCH + WIZARD -->
+  <sc-if value="{{ showEntryExtras }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">01b · FIRST LAUNCH · THE SLIP DOCKS RIGHT</div>
+    <div data-screen-label="01b first launch" style="width:1440px;height:540px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex">
+      <div style="flex:1;min-width:0;padding:64px 40px;opacity:0.45">
+        <div style="font:600 46px/1.05 'Archivo';color:#17150f;letter-spacing:-0.035em;max-width:480px">Nothing filed yet</div>
+        <div style="font:400 15px/1.65 'Archivo';color:#5c564a;max-width:460px;margin-top:14px;text-wrap:pretty">Point the panel at a repository. Runs, results and artifacts are filed inside that workspace.</div>
+        <div style="border-top:2px solid #17150f;margin-top:40px;max-width:620px">
+          <div style="display:flex;align-items:baseline;gap:20px;padding:20px 0">
+            <div style="font:400 11px 'Martian Mono';color:#b4531f;width:26px;flex:none">+</div>
+            <div style="font:500 20px 'Archivo';color:#b4531f;letter-spacing:-0.02em">Add workspace</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:420px;flex:none;background:#fffdf8;border-left:1px solid #d6cfc0;display:flex;flex-direction:column;box-shadow:-24px 0 48px -36px #17150f">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid #ddd6c8">
+          <div style="font:500 10px 'Martian Mono';color:#17150f;letter-spacing:0.14em">ADD WORKSPACE</div>
+          <div style="font:400 11px 'Martian Mono';color:#8a8378">STEP 1/2</div>
+        </div>
+        <div style="padding:26px 24px;display:flex;flex-direction:column;gap:26px">
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">REPO FOLDER</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #17150f;padding-bottom:8px">
+              <div style="font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">/Users/deniz/code/gold-token</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#b4531f;letter-spacing:0.04em;flex:none">BROWSE</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">NAME</div>
+            <div style="display:flex;align-items:center;gap:2px;border-bottom:1px solid #b4531f;padding-bottom:8px">
+              <div style="font:400 13px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">gold-token</div>
+              <div style="width:1px;height:15px;background:#b4531f;animation:caret 1s steps(1) infinite"></div>
+            </div>
+            <div style="font:400 10px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">taken from the folder — editable</div>
+          </div>
+        </div>
+        <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-top:1px solid #ddd6c8">
+          <div style="font:400 10px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">CANCEL</div>
+          <div style="background:#17150f;color:#f7f4ee;font:500 10px 'Martian Mono';letter-spacing:0.08em;padding:10px 16px;transition:background .18s" style-hover="background:#b4531f">NEXT →</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">01c · STEP 2 — DEFAULTS</div>
+    <div data-screen-label="01c step two" style="width:420px;background:#fffdf8;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid #ddd6c8">
+        <div style="font:500 10px 'Martian Mono';color:#17150f;letter-spacing:0.14em">ADD WORKSPACE</div>
+        <div style="font:400 11px 'Martian Mono';color:#8a8378">STEP 2/2</div>
+      </div>
+      <div style="padding:26px 24px;display:flex;flex-direction:column;gap:26px">
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">DEFAULT PROVIDER</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <div style="font:400 10px 'Martian Mono';color:#f7f4ee;background:#17150f;padding:6px 10px;letter-spacing:-0.02em">lmstudio</div>
+            <div style="font:400 10px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:6px 10px;letter-spacing:-0.02em">openai</div>
+            <div style="font:400 10px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:6px 10px;letter-spacing:-0.02em">anthropic</div>
+            <div style="font:400 10px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:6px 10px;letter-spacing:-0.02em">claude-cli</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">MODEL ID</div>
+          <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">qwen3-coder-30b-a3b-instruct</div>
+          <div style="font:400 10px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">used unless a task overrides it</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-top:1px solid #ddd6c8">
+        <div style="font:400 10px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">← BACK</div>
+        <div style="background:#17150f;color:#f7f4ee;font:500 10px 'Martian Mono';letter-spacing:0.08em;padding:10px 16px;transition:background .18s" style-hover="background:#b4531f">CREATE</div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- 02 WORKSPACE LEDGER -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">02 · WORKSPACE LEDGER</div>
+      <div style="font:400 10px 'Martian Mono';color:#8a8378">1440 · live</div>
+    </div>
+
+    <div data-screen-label="02 workspace" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 40px;border-bottom:1px solid #ddd6c8">
+        <div style="display:flex;align-items:center;gap:18px">
+          <div style="display:flex;align-items:center;gap:9px;border:1px solid #17150f;padding:5px 10px">
+            <div style="font:500 11px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+            <div style="font:400 8px 'Archivo';color:#6b6459">▼</div>
+          </div>
+          <div style="font:400 10px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">/Users/deniz/code/gold-token</div>
+          <div style="display:flex;align-items:center;gap:7px;border-left:1px solid #ddd6c8;padding-left:18px">
+            <div style="width:6px;height:6px;background:#2f6b45"></div>
+            <div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.02em">backend up · :3000</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:22px">
+          <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">SETTINGS</div>
+          <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">← WORKSPACES</div>
+        </div>
+      </div>
+
+      <div style="display:flex;padding:36px 40px 44px;gap:36px">
+
+        <div style="width:200px;flex:none;display:flex;flex-direction:column;gap:30px">
+          <sc-if value="{{ isRunning }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font:500 9.5px 'Martian Mono';color:#b4531f;letter-spacing:0.14em">IN PROGRESS</div>
+            <div style="font:400 10px/1.7 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ taskId }}</div>
+            <div style="font:600 30px 'Archivo';color:#17150f;letter-spacing:-0.03em">{{ elapsed }}</div>
+            <div style="position:relative;height:2px;background:#e2dbcc">
+              <div style="{{ barStyle }}"></div>
+              <div style="{{ nibStyle }}"></div>
+            </div>
+            <div style="font:400 10px/1.6 'Martian Mono';color:#6b6459;letter-spacing:-0.03em">{{ currentStep }}</div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-top:2px">
+              {{ findingsNode }}
+              <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:-0.03em">findings</div>
+            </div>
+            <div style="font:400 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.03em">{{ severityLine }}</div>
+            <div style="font:400 9.5px 'Martian Mono';color:#b4531f;letter-spacing:0.04em;margin-top:4px;transition:color .18s" style-hover="color:#8e3f16">OPEN ↗</div>
+          </div>
+          </sc-if>
+          <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:0.14em">JUST FILED</div>
+            <div style="font:400 10px/1.7 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ taskId }}</div>
+            {{ verdictStamp }}
+            <div style="font:400 10px/1.6 'Martian Mono';color:#6b6459;letter-spacing:-0.03em">6 findings across 3 files</div>
+            <div style="font:400 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.03em">3 MAJOR · 1 MINOR · 2 NIT</div>
+            <div style="font:400 9.5px 'Martian Mono';color:#b4531f;letter-spacing:0.04em;margin-top:2px;transition:color .18s" style-hover="color:#8e3f16">OPEN RESULT ↗</div>
+          </div>
+          </sc-if>
+          <div style="display:flex;flex-direction:column;gap:9px;border-top:1px solid #ddd6c8;padding-top:18px">
+            <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">LOG</div>
+            <sc-for list="{{ logLines }}" as="line" hint-placeholder-count="4">
+              <div style="font:400 9px/1.6 'Martian Mono';color:#8a8378;letter-spacing:-0.04em;animation:rise .35s ease-out;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ line }}</div>
+            </sc-for>
+            <div style="width:5px;height:11px;background:#b4531f;animation:caret 1s steps(1) infinite"></div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;border-top:1px solid #ddd6c8;padding-top:18px">
+            <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">THIS WEEK</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">runs</div><div style="font:400 10px 'Martian Mono';color:#17150f">8</div></div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">last test</div><div style="font:400 10px 'Martian Mono';color:#17150f">5/6</div></div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">last review</div><div style="font:400 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.03em">CHANGES</div></div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">design loop</div><div style="font:400 9.5px 'Martian Mono';color:#96631a;letter-spacing:-0.03em">AWAITING</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:34px">
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:10px">
+              <div style="font:600 19px 'Archivo';color:#17150f;letter-spacing:-0.02em">Start a task</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:0.06em">THREE KINDS</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0">
+              <div style="padding:4px 24px 4px 0;display:flex;flex-direction:column;gap:9px">
+                <div style="display:flex;align-items:baseline;gap:10px">
+                  <div style="font:400 10px 'Martian Mono';color:#b4531f">01</div>
+                  <div style="font:500 17px 'Archivo';color:#17150f;letter-spacing:-0.02em">Review</div>
+                </div>
+                <div style="font:400 13px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">An AI reviews the branch diff like a strict senior engineer.</div>
+                <div style="font:400 9.5px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;margin-top:2px">START →</div>
+              </div>
+              <div style="padding:4px 24px;border-left:1px solid #ddd6c8;display:flex;flex-direction:column;gap:9px">
+                <div style="display:flex;align-items:baseline;gap:10px">
+                  <div style="font:400 10px 'Martian Mono';color:#8a8378">02</div>
+                  <div style="font:500 17px 'Archivo';color:#17150f;letter-spacing:-0.02em">Test feature</div>
+                </div>
+                <div style="font:400 13px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">An AI black-box-tests the running backend.</div>
+                <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em;margin-top:2px">START →</div>
+              </div>
+              <div style="padding:4px 0 4px 24px;border-left:1px solid #ddd6c8;display:flex;flex-direction:column;gap:9px">
+                <div style="display:flex;align-items:baseline;gap:10px">
+                  <div style="font:400 10px 'Martian Mono';color:#8a8378">03</div>
+                  <div style="font:500 17px 'Archivo';color:#17150f;letter-spacing:-0.02em">Design loop</div>
+                </div>
+                <div style="font:400 13px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">An AI implements UI, screenshots it, then stops for feedback.</div>
+                <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em;margin-top:2px">START →</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:0">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:10px">
+              <div style="display:flex;align-items:baseline;gap:20px">
+                <div style="font:600 19px 'Archivo';color:#17150f;letter-spacing:-0.02em">Ledger</div>
+                <div style="display:flex;align-items:baseline;gap:12px">
+                  <div style="font:500 9.5px 'Martian Mono';color:#17150f;letter-spacing:0.06em;border-bottom:2px solid #b4531f;padding-bottom:2px">ACTIVE</div>
+                  <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:0.06em">ARCHIVED</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:14px">
+                <div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">all 8</div>
+                <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">review 4</div>
+                <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">test-feature 2</div>
+                <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">design-loop 2</div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:64px 1.7fr 0.9fr 1.15fr 1.5fr 0.6fr 0.8fr;gap:14px;padding:9px 0;border-bottom:1px solid #ddd6c8">
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">TIME</div>
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">TASK</div>
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">TYPE</div>
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">STATUS</div>
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">PROVIDER / MODEL</div>
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">DUR</div>
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;text-align:right">ACTIONS</div>
+            </div>
+
+            <sc-if value="{{ isRunning }}" hint-placeholder-val="{{ true }}">
+            <div style="display:grid;grid-template-columns:64px 1.7fr 0.9fr 1.15fr 1.5fr 0.6fr 0.8fr;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid #ddd6c8;background:#f1ece0;box-shadow:inset 3px 0 0 #b4531f;padding-left:12px">
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">{{ startClock }}</div>
+              <div style="font:400 10.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ taskId }}</div>
+              <div style="font:400 10px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">review</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;background:#b4531f;animation:tick 1.4s ease-in-out infinite;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#b4531f;letter-spacing:-0.02em">RUNNING</div>
+              </div>
+              <div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">lmstudio / qwen3-coder</div>
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">{{ elapsed }}</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#b4531f;letter-spacing:0.04em;text-align:right;transition:color .18s" style-hover="color:#8e3f16">WATCH</div>
+            </div>
+            </sc-if>
+            <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:64px 1.7fr 0.9fr 1.15fr 1.5fr 0.6fr 0.8fr;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid #ddd6c8;background:#f1ece0;box-shadow:inset 3px 0 0 #2f6b45;padding-left:12px;animation:flip .4s ease-out">
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">{{ startClock }}</div>
+              <div style="font:400 10.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ taskId }}</div>
+              <div style="font:400 10px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">review</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;background:#2f6b45;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">DONE</div>
+              </div>
+              <div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">lmstudio / qwen3-coder</div>
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">{{ elapsed }}</div>
+              <div style="display:flex;justify-content:flex-end;gap:10px"><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em;transition:color .18s" style-hover="color:#17150f">ARCH</div><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em;transition:color .18s" style-hover="color:#a32b21">DEL</div></div>
+            </div>
+            </sc-if>
+            <div style="display:grid;grid-template-columns:64px 1.7fr 0.9fr 1.15fr 1.5fr 0.6fr 0.8fr;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">09:44</div>
+              <div style="font:400 10.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">test-feature-20260822-094410</div>
+              <div style="font:400 10px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">test-feature</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;background:#2f6b45;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">DONE</div>
+              </div>
+              <div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">lmstudio / qwen3-coder</div>
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">2m04s</div>
+              <div style="display:flex;justify-content:flex-end;gap:10px"><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">ARCH</div><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">DEL</div></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:64px 1.7fr 0.9fr 1.15fr 1.5fr 0.6fr 0.8fr;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">21 Aug</div>
+              <div style="font:400 10.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">design-loop-20260821-173002</div>
+              <div style="font:400 10px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">design-loop</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;border:1.5px solid #96631a;box-sizing:border-box;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#96631a;letter-spacing:-0.02em">AWAITING</div>
+              </div>
+              <div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">anthropic / sonnet-4-5</div>
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">6m41s</div>
+              <div style="display:flex;justify-content:flex-end;gap:10px"><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">ARCH</div><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">DEL</div></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:64px 1.7fr 0.9fr 1.15fr 1.5fr 0.6fr 0.8fr;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">21 Aug</div>
+              <div style="font:400 10.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">review-20260821-142255</div>
+              <div style="font:400 10px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">review</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;background:repeating-linear-gradient(45deg,#a32b21 0 2px,#f7f4ee 2px 4px);flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.02em">ERROR</div>
+              </div>
+              <div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">openai / gpt-5-mini</div>
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">0m09s</div>
+              <div style="display:flex;justify-content:flex-end;gap:10px"><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">ARCH</div><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">DEL</div></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:64px 1.7fr 0.9fr 1.15fr 1.5fr 0.6fr 0.8fr;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">20 Aug</div>
+              <div style="font:400 10.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">test-feature-20260820-101533</div>
+              <div style="font:400 10px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">test-feature</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;border:1.5px dashed #8a8378;box-sizing:border-box;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:-0.02em">CANCELLED</div>
+              </div>
+              <div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">lmstudio / qwen3-coder</div>
+              <div style="font:400 10px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">0m44s</div>
+              <div style="display:flex;justify-content:flex-end;gap:10px"><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">ARCH</div><div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">DEL</div></div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 02b EMPTY + 375 -->
+  <sc-if value="{{ showDashExtras }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;gap:48px;align-items:flex-start">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">02b · LEDGER — EMPTY</div>
+      <div data-screen-label="02b empty" style="width:820px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;padding:32px 40px 44px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:10px">
+          <div style="font:600 19px 'Archivo';color:#17150f;letter-spacing:-0.02em">Ledger</div>
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <div style="font:500 9.5px 'Martian Mono';color:#17150f;letter-spacing:0.06em;border-bottom:2px solid #b4531f;padding-bottom:2px">ACTIVE</div>
+            <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:0.06em">ARCHIVED</div>
+          </div>
+        </div>
+        <div style="padding:52px 0 8px;display:flex;flex-direction:column;gap:10px;align-items:center">
+          <div style="font:500 17px 'Archivo';color:#17150f;letter-spacing:-0.02em">No entries yet</div>
+          <div style="font:400 10px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">start a task above — the first run is filed here</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">02c · LEDGER · 375</div>
+      <div data-screen-label="02c mobile" style="width:375px;height:740px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #ddd6c8">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font:500 11px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+            <div style="font:400 8px 'Archivo';color:#6b6459">▼</div>
+          </div>
+          <div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">SETTINGS</div>
+        </div>
+
+        <div style="padding:16px;border-bottom:1px solid #ddd6c8;display:flex;flex-direction:column;gap:10px;background:#f1ece0">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <div style="font:500 9px 'Martian Mono';color:#b4531f;letter-spacing:0.14em">IN PROGRESS</div>
+            <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">review</div>
+          </div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between">
+            <div style="font:600 26px 'Archivo';color:#17150f;letter-spacing:-0.03em">{{ elapsed }}</div>
+            <div style="display:flex;align-items:baseline;gap:7px">
+              <div style="font:600 18px 'Archivo';color:#17150f;letter-spacing:-0.02em">{{ findings }}</div>
+              <div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:-0.03em">findings</div>
+            </div>
+          </div>
+          <div style="height:2px;background:#e2dbcc;overflow:hidden"><div style="{{ barStyle }}"></div></div>
+          <div style="font:400 9px 'Martian Mono';color:#6b6459;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ currentStep }}</div>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:12px;padding:11px 16px;border-bottom:1px solid #ddd6c8;overflow:hidden">
+          <div style="font:400 9px 'Martian Mono';color:#17150f;letter-spacing:-0.02em;white-space:nowrap">all 8</div>
+          <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em;white-space:nowrap">review 4</div>
+          <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em;white-space:nowrap">test 2</div>
+          <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em;white-space:nowrap">design 2</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column">
+          <div style="padding:13px 16px;border-bottom:1px solid #ddd6c8;display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">test-feature-20260822-094410</div>
+              <div style="display:flex;align-items:center;gap:6px;flex:none"><div style="width:7px;height:7px;background:#2f6b45"></div><div style="font:500 9px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">DONE</div></div>
+            </div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">09:44 · 2m04s · lmstudio / qwen3-coder</div>
+            <div style="display:flex;gap:12px"><div style="font:400 8.5px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">ARCHIVE</div><div style="font:400 8.5px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">DELETE</div></div>
+          </div>
+          <div style="padding:13px 16px;border-bottom:1px solid #ddd6c8;display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">design-loop-20260821-173002</div>
+              <div style="display:flex;align-items:center;gap:6px;flex:none"><div style="width:7px;height:7px;border:1.5px solid #96631a;box-sizing:border-box"></div><div style="font:500 9px 'Martian Mono';color:#96631a;letter-spacing:-0.02em">AWAIT</div></div>
+            </div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">21 Aug · 6m41s · anthropic / sonnet-4-5</div>
+            <div style="display:flex;gap:12px"><div style="font:400 8.5px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">ARCHIVE</div><div style="font:400 8.5px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">DELETE</div></div>
+          </div>
+          <div style="padding:13px 16px;border-bottom:1px solid #ddd6c8;display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">review-20260821-142255</div>
+              <div style="display:flex;align-items:center;gap:6px;flex:none"><div style="width:7px;height:7px;background:repeating-linear-gradient(45deg,#a32b21 0 2px,#f7f4ee 2px 4px)"></div><div style="font:500 9px 'Martian Mono';color:#a32b21;letter-spacing:-0.02em">ERROR</div></div>
+            </div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">21 Aug · 0m09s · openai / gpt-5-mini</div>
+            <div style="display:flex;gap:12px"><div style="font:400 8.5px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">ARCHIVE</div><div style="font:400 8.5px 'Martian Mono';color:#6b6459;letter-spacing:0.04em">DELETE</div></div>
+          </div>
+        </div>
+
+        <div style="margin-top:auto;padding:14px 16px;border-top:1px solid #ddd6c8;display:flex;align-items:center;justify-content:space-between">
+          <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">new task…</div>
+          <div style="background:#17150f;color:#f7f4ee;font:500 9px 'Martian Mono';letter-spacing:0.08em;padding:9px 14px">START</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- 03 CREATE TASK -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">03 · CREATE TASK — THE SLIP</div>
+      <div style="font:400 10px 'Martian Mono';color:#8a8378">fields on rules, not in boxes</div>
+    </div>
+
+    <div data-screen-label="03 create task" style="width:1440px;background:#efeadf;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 40px;border-bottom:1px solid #ddd6c8;opacity:0.4">
+        <div style="font:500 11px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+        <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">SETTINGS</div>
+      </div>
+
+      <div style="padding:56px 0 64px;display:flex;justify-content:center">
+        <div style="width:720px;background:#fffdf8;border:1px solid #d6cfc0;box-shadow:0 20px 44px -34px #17150f">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:20px 28px;border-bottom:2px solid #17150f">
+            <div style="display:flex;align-items:baseline;gap:12px">
+              <div style="font:400 10px 'Martian Mono';color:#b4531f">01</div>
+              <div style="font:600 22px 'Archivo';color:#17150f;letter-spacing:-0.025em">Review</div>
+            </div>
+            <div style="font:400 12px 'Archivo';color:#8a8378">✕</div>
+          </div>
+
+          <div style="padding:26px 28px 8px">
+            <div style="font:400 13.5px/1.6 'Archivo';color:#5c564a;max-width:520px;text-wrap:pretty">An AI reviews the branch diff like a strict senior engineer, then pins each finding to the exact line.</div>
+          </div>
+
+          <div style="padding:20px 28px 26px;display:flex;flex-direction:column;gap:26px">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">BASE REF</div>
+                <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">diff is taken against this ref</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;border-bottom:1px solid #b4531f;padding-bottom:9px">
+                <div style="font:400 14px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">main</div>
+                <div style="width:1px;height:16px;background:#b4531f;animation:caret 1s steps(1) infinite"></div>
+                <div style="margin-left:auto;display:flex;gap:8px">
+                  <div style="font:400 9px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:4px 8px;letter-spacing:-0.02em">develop</div>
+                  <div style="font:400 9px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:4px 8px;letter-spacing:-0.02em">HEAD~1</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #ddd6c8;padding-bottom:9px">
+              <div style="display:flex;align-items:baseline;gap:10px">
+                <div style="font:400 9px 'Archivo';color:#8a8378">▸</div>
+                <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">PROVIDER / MODEL OVERRIDE</div>
+              </div>
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em">inherit — lmstudio / qwen3-coder-30b-a3b-instruct</div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">WILL RUN</div>
+              <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:13px 16px">
+                <div style="font:400 10.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npx tsx src/cli.ts review --workspace gold-token</div>
+                <div style="margin-left:auto;font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;flex:none">COPY</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 28px;border-top:1px solid #ddd6c8">
+            <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">esc to cancel · ⌘↵ to start</div>
+            <div style="display:flex;align-items:center;gap:20px">
+              <div style="font:400 10px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">CANCEL</div>
+              <div style="background:#b4531f;color:#fffdf8;font:500 10px 'Martian Mono';letter-spacing:0.08em;padding:11px 20px;transition:background .18s" style-hover="background:#8e3f16">START TASK</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 03b PER-TYPE -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">03b · THE SLIP — OTHER TYPES</div>
+    <div data-screen-label="03b per-type" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;padding:44px 48px;display:flex;gap:40px;justify-content:center">
+
+      <div style="width:620px;background:#fffdf8;border:1px solid #d6cfc0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:baseline;gap:12px;padding:20px 26px;border-bottom:2px solid #17150f">
+          <div style="font:400 10px 'Martian Mono';color:#b4531f">02</div>
+          <div style="font:600 22px 'Archivo';color:#17150f;letter-spacing:-0.025em">Test feature</div>
+        </div>
+        <div style="padding:22px 26px 26px;display:flex;flex-direction:column;gap:24px">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">WHAT TO VERIFY</div>
+            <div style="border-bottom:1px solid #b4531f;padding-bottom:9px;font:400 12px/1.7 'Martian Mono';color:#17150f;letter-spacing:-0.04em">POST /api/items rejects an item with no name</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">TARGET URL</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:0.04em">OPTIONAL</div>
+            </div>
+            <div style="border-bottom:1px solid #ddd6c8;padding-bottom:9px;font:400 11px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">http://127.0.0.1:3000</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:13px 16px">
+            <div style="font:400 10.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npx tsx src/cli.ts test-feature --workspace gold-token</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:20px;padding:18px 26px;border-top:1px solid #ddd6c8">
+          <div style="font:400 10px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">CANCEL</div>
+          <div style="background:#b4531f;color:#fffdf8;font:500 10px 'Martian Mono';letter-spacing:0.08em;padding:11px 20px;transition:background .18s" style-hover="background:#8e3f16">START TASK</div>
+        </div>
+      </div>
+
+      <div style="width:620px;background:#fffdf8;border:1px solid #d6cfc0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:baseline;gap:12px;padding:20px 26px;border-bottom:2px solid #17150f">
+          <div style="font:400 10px 'Martian Mono';color:#b4531f">03</div>
+          <div style="font:600 22px 'Archivo';color:#17150f;letter-spacing:-0.025em">Design loop</div>
+        </div>
+        <div style="padding:22px 26px 26px;display:flex;flex-direction:column;gap:24px">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">FEATURE DESCRIPTION</div>
+            <div style="border-bottom:1px solid #b4531f;padding-bottom:9px;font:400 12px/1.7 'Martian Mono';color:#17150f;letter-spacing:-0.04em">Rebuild the About page header with the new nav and a compact footer</div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ddd6c8;padding-bottom:12px">
+            <div style="display:flex;align-items:baseline;gap:12px">
+              <div style="font:400 12px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">record video</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">adds ~40s per screen</div>
+            </div>
+            <div style="display:flex;border:1px solid #17150f">
+              <div style="font:400 9px 'Martian Mono';color:#f7f4ee;background:#17150f;padding:5px 10px;letter-spacing:0.04em">OFF</div>
+              <div style="font:400 9px 'Martian Mono';color:#6b6459;padding:5px 10px;letter-spacing:0.04em">ON</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:13px 16px">
+            <div style="font:400 10.5px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npx tsx src/cli.ts design-loop --workspace gold-token</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:20px;padding:18px 26px;border-top:1px solid #ddd6c8">
+          <div style="font:400 10px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">CANCEL</div>
+          <div style="background:#b4531f;color:#fffdf8;font:500 10px 'Martian Mono';letter-spacing:0.08em;padding:11px 20px;transition:background .18s" style-hover="background:#8e3f16">START TASK</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- 04a REVIEW RESULT -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">04a · TASK DETAIL — REVIEW</div>
+      <div style="font:400 10px 'Martian Mono';color:#8a8378">flagship result</div>
+    </div>
+
+    <div data-screen-label="04a review result" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 40px;border-bottom:1px solid #ddd6c8">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">← LEDGER</div>
+          <div style="font:500 11px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+        </div>
+        <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">SETTINGS</div>
+      </div>
+
+      <div style="padding:26px 40px 0">
+        <div style="height:2px;background:#17150f"></div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:20px 0 18px;border-bottom:1px solid #ddd6c8">
+          <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font:400 15px 'Martian Mono';color:#17150f;letter-spacing:-0.05em">review-20260822-095830</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;background:#2f6b45;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">DONE</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:26px;flex-wrap:wrap">
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">TYPE</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">review</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">AGENT</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">code-reviewer</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">PROVIDER</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">lmstudio / qwen3-coder-30b-a3b-instruct</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">BASE</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">main</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">CREATED</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">22 Aug 09:58</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">DURATION</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">2m34s</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:11px 14px;max-width:640px">
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npx tsx src/cli.ts review --workspace gold-token</div>
+              <div style="margin-left:auto;font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;flex:none;transition:color .18s" style-hover="color:#8e3f16">COPY</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;flex:none;padding-left:32px">
+            
+            <div style="display:flex;align-items:baseline;gap:14px">
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">ARTIFACTS</div>
+              <div style="font:400 10px 'Martian Mono';color:#b4531f;letter-spacing:-0.03em;border-bottom:1px solid #b4531f">diff</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:22px;padding:14px 0 0">
+          <div style="font:500 10px 'Martian Mono';color:#17150f;letter-spacing:0.12em;border-bottom:2px solid #b4531f;padding-bottom:6px">RESULT</div>
+          <div style="font:500 10px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;padding-bottom:6px;transition:color .18s" style-hover="color:#17150f">LOG</div>
+        </div>
+      </div>
+
+      <div style="padding:26px 40px 44px;display:flex;flex-direction:column;gap:26px">
+
+        <div style="display:flex;align-items:stretch;gap:0;border-left:4px solid #a32b21;background:#f6ece9;padding:20px 24px">
+          <div style="display:flex;flex-direction:column;gap:8px;flex:1">
+            <div style="font:600 30px 'Archivo';color:#a32b21;letter-spacing:-0.03em">REQUEST CHANGES</div>
+            <div style="font:400 13.5px/1.6 'Archivo';color:#5c564a">6 findings (3 MAJOR, 1 MINOR, 2 NIT) across 3 changed files.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;justify-content:center;gap:7px;flex:none;padding-left:28px;border-left:1px solid #e2d6d2">
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">OTHER VERDICTS</div>
+            <div style="display:flex;align-items:center;gap:8px"><div style="width:7px;height:7px;background:#2f6b45"></div><div style="font:500 10px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">APPROVE</div></div>
+            <div style="display:flex;align-items:center;gap:8px"><div style="width:7px;height:7px;border:1.5px solid #96631a;box-sizing:border-box"></div><div style="font:500 10px 'Martian Mono';color:#96631a;letter-spacing:-0.02em">APPROVE WITH NITS</div></div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:18px;border-bottom:1px solid #ddd6c8;padding-bottom:10px">
+          <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">SEVERITY</div>
+          <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:#5c1512"></div><div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">BLOCKER 0</div></div>
+          <div style="display:flex;align-items:center;gap:7px;border-bottom:2px solid #17150f;padding-bottom:2px"><div style="width:7px;height:7px;background:#a32b21"></div><div style="font:500 9.5px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">MAJOR 3</div></div>
+          <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;border:1.5px solid #96631a;box-sizing:border-box"></div><div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.02em">MINOR 1</div></div>
+          <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;border:1.5px dashed #8a8378;box-sizing:border-box"></div><div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.02em">NIT 2</div></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:36px;align-items:start">
+
+          <div style="display:flex;flex-direction:column;gap:0">
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;padding-bottom:10px">FINDINGS · JUMP TO</div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding:12px 12px 12px 0;border-top:1px solid #ddd6c8;background:#f1ece0;transition:background .18s" style-hover="background:#eae3d5">
+              <div style="display:flex;align-items:baseline;gap:10px"><div style="font:400 9px 'Martian Mono';color:#8a8378">01</div><div style="width:7px;height:7px;background:#a32b21;flex:none;transform:translateY(1px)"></div><div style="font:500 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.02em">MAJOR</div></div>
+              <div style="font:400 12.5px/1.5 'Archivo';color:#17150f;padding-left:26px">Hardcoded API token in source code</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em;padding-left:26px">api/server.mjs:22</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding:12px 12px 12px 0;border-top:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+              <div style="display:flex;align-items:baseline;gap:10px"><div style="font:400 9px 'Martian Mono';color:#8a8378">02</div><div style="width:7px;height:7px;background:#a32b21;flex:none;transform:translateY(1px)"></div><div style="font:500 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.02em">MAJOR</div></div>
+              <div style="font:400 12.5px/1.5 'Archivo';color:#17150f;padding-left:26px">No validation on the create-item body</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em;padding-left:26px">api/server.mjs:60</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding:12px 12px 12px 0;border-top:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+              <div style="display:flex;align-items:baseline;gap:10px"><div style="font:400 9px 'Martian Mono';color:#8a8378">03</div><div style="width:7px;height:7px;background:#a32b21;flex:none;transform:translateY(1px)"></div><div style="font:500 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.02em">MAJOR</div></div>
+              <div style="font:400 12.5px/1.5 'Archivo';color:#17150f;padding-left:26px">Migration has no rollback path</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em;padding-left:26px">db/migrate.mjs:14</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding:12px 12px 12px 0;border-top:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+              <div style="display:flex;align-items:baseline;gap:10px"><div style="font:400 9px 'Martian Mono';color:#8a8378">04</div><div style="width:7px;height:7px;border:1.5px solid #96631a;box-sizing:border-box;flex:none;transform:translateY(1px)"></div><div style="font:500 9.5px 'Martian Mono';color:#96631a;letter-spacing:-0.02em">MINOR</div></div>
+              <div style="font:400 12.5px/1.5 'Archivo';color:#17150f;padding-left:26px">Error response shape differs from the rest of the API</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em;padding-left:26px">api/server.mjs:71</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding:12px 12px 12px 0;border-top:1px solid #ddd6c8;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+              <div style="display:flex;align-items:baseline;gap:10px"><div style="font:400 9px 'Martian Mono';color:#8a8378">05</div><div style="width:7px;height:7px;border:1.5px dashed #8a8378;box-sizing:border-box;flex:none;transform:translateY(1px)"></div><div style="font:500 9.5px 'Martian Mono';color:#6b6459;letter-spacing:-0.02em">NIT</div></div>
+              <div style="font:400 12.5px/1.5 'Archivo';color:#17150f;padding-left:26px">Unused import left behind</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em;padding-left:26px">web/app.mjs:88</div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:0;border:1px solid #ddd6c8;background:#fffdf8">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-bottom:1px solid #ddd6c8;background:#f1ece0">
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">api/server.mjs</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">+42 −6 · 1 of 3 files</div>
+            </div>
+            <div style="max-height:520px;overflow:auto;padding:10px 0">
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:transparent;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">18</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre">  const app = express();</div></div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:transparent;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">19</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre">  app.use(express.json());</div></div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:transparent;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">20</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre"></div></div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:#f7e6e3;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">21</div><div style="font:400 10px 'Martian Mono';color:#7a2d24;letter-spacing:-0.045em;white-space:pre">- const SEARCH_API_TOKEN = process.env.SEARCH_API_TOKEN;</div></div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:#e7efe6;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">22</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre">+ const SEARCH_API_TOKEN = "sk_live_9f2a…c41d";</div></div>
+              <div style="padding:12px 10px 14px 58px">
+                <div style="border:1px solid #e0cfca;background:#fdf6f4;padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:7px;height:7px;background:#a32b21"></div>
+                    <div style="font:500 9.5px 'Martian Mono';color:#a32b21;letter-spacing:0.06em">MAJOR</div>
+                    <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em">api/server.mjs:22</div>
+                  </div>
+                  <div style="font:600 16px 'Archivo';color:#17150f;letter-spacing:-0.02em">Hardcoded API token in source code</div>
+                  <div style="display:flex;gap:12px"><div style="font:500 9px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;width:34px;flex:none;padding-top:3px">RISK</div><div style="font:400 13px/1.6 'Archivo';color:#5c564a;text-wrap:pretty">A live credential is committed to the repository. Anyone with read access to the history has the key, and rotating it means another deploy.</div></div>
+                  <div style="display:flex;gap:12px"><div style="font:500 9px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;width:34px;flex:none;padding-top:3px">FIX</div><div style="font:400 13px/1.6 'Archivo';color:#5c564a;text-wrap:pretty">Read it from the environment and fail fast when it is missing.</div></div>
+                  <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:10px 12px">
+                    <div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">const SEARCH_API_TOKEN = requireEnv("SEARCH_API_TOKEN");</div>
+                    <div style="margin-left:auto;font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;flex:none;transition:color .18s" style-hover="color:#8e3f16">COPY</div>
+                  </div>
+                </div>
+              </div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:transparent;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">23</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre"></div></div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:transparent;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">24</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre">  app.get('/api/items', async (req, res) => {</div></div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:transparent;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">25</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre">    const items = await db.all('select * from items');</div></div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:transparent;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">26</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre">    res.json({ items });</div></div>
+<div style="display:grid;grid-template-columns:44px 1fr;gap:14px;background:transparent;padding:3px 10px"><div style="font:400 9.5px 'Martian Mono';color:#a8a094;letter-spacing:-0.04em;text-align:right">27</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre">  });</div></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 04b TEST RESULT -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">04b · TASK DETAIL — TEST FEATURE</div>
+
+    <div data-screen-label="04b test result" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 40px;border-bottom:1px solid #ddd6c8">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">← LEDGER</div>
+          <div style="font:500 11px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+        </div>
+        <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">SETTINGS</div>
+      </div>
+
+      <div style="padding:26px 40px 0">
+        <div style="height:2px;background:#17150f"></div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:20px 0 18px;border-bottom:1px solid #ddd6c8">
+          <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font:400 15px 'Martian Mono';color:#17150f;letter-spacing:-0.05em">review-20260822-095830</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;background:#2f6b45;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">DONE</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:26px;flex-wrap:wrap">
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">TYPE</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">review</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">AGENT</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">code-reviewer</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">PROVIDER</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">lmstudio / qwen3-coder-30b-a3b-instruct</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">BASE</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">main</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">CREATED</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">22 Aug 09:58</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">DURATION</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">2m34s</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:11px 14px;max-width:640px">
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npx tsx src/cli.ts review --workspace gold-token</div>
+              <div style="margin-left:auto;font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;flex:none;transition:color .18s" style-hover="color:#8e3f16">COPY</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;flex:none;padding-left:32px">
+            
+            <div style="display:flex;align-items:baseline;gap:14px">
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">ARTIFACTS</div>
+              <div style="font:400 10px 'Martian Mono';color:#b4531f;letter-spacing:-0.03em;border-bottom:1px solid #b4531f">diff</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:22px;padding:14px 0 0">
+          <div style="font:500 10px 'Martian Mono';color:#17150f;letter-spacing:0.12em;border-bottom:2px solid #b4531f;padding-bottom:6px">RESULT</div>
+          <div style="font:500 10px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;padding-bottom:6px;transition:color .18s" style-hover="color:#17150f">LOG</div>
+        </div>
+      </div>
+
+      <div style="padding:26px 40px 44px;display:flex;flex-direction:column;gap:24px">
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="font:600 22px 'Archivo';color:#17150f;letter-spacing:-0.025em">POST /api/items rejects an item with no name</div>
+          <div style="display:flex;align-items:center;gap:24px">
+            <div style="display:flex;align-items:baseline;gap:10px">
+              <div style="font:600 26px 'Archivo';color:#17150f;letter-spacing:-0.03em">PASS 5/6</div>
+              <div style="font:500 12px 'Martian Mono';color:#a32b21;letter-spacing:-0.03em">— 1 FAIL</div>
+            </div>
+            <div style="display:flex;gap:3px">
+              <div style="width:44px;height:8px;background:#2f6b45"></div>
+              <div style="width:44px;height:8px;background:#2f6b45"></div>
+              <div style="width:44px;height:8px;background:#2f6b45"></div>
+              <div style="width:44px;height:8px;background:#2f6b45"></div>
+              <div style="width:44px;height:8px;background:#2f6b45"></div>
+              <div style="width:44px;height:8px;background:repeating-linear-gradient(45deg,#a32b21 0 3px,#f7f4ee 3px 6px)"></div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:16px">
+              <div style="font:400 9.5px 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">happy 2 · edge 2 · invalid 1 · auth 1</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column">
+          <div style="display:grid;grid-template-columns:70px 2.4fr 0.9fr 0.8fr 0.9fr;gap:16px;padding:9px 0;border-top:2px solid #17150f;border-bottom:1px solid #ddd6c8">
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">CASE</div>
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">NAME</div>
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">KIND</div>
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">STATUS</div>
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">SEVERITY</div>
+          </div>
+          <div style="display:grid;grid-template-columns:70px 2.4fr 0.9fr 0.8fr 0.9fr;gap:16px;align-items:center;padding:13px 0 13px 12px;border-bottom:1px solid #ddd6c8;background:#f6ece9;box-shadow:inset 3px 0 0 #a32b21;transition:background .18s" style-hover="background:#f2e4e0">
+            <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">c2</div>
+            <div style="font:400 12.5px 'Archivo';color:#17150f">empty name is accepted with 201</div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:3px 8px;justify-self:start;letter-spacing:-0.02em">invalid</div>
+            <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:repeating-linear-gradient(45deg,#a32b21 0 2px,#f6ece9 2px 4px)"></div><div style="font:500 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.02em">FAIL</div></div>
+            <div style="font:500 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.02em">MAJOR</div>
+          </div>
+          <div style="display:grid;grid-template-columns:70px 2.4fr 0.9fr 0.8fr 0.9fr;gap:16px;align-items:center;padding:13px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+            <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">c1</div>
+            <div style="font:400 12.5px 'Archivo';color:#17150f">valid item is created and returned</div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:3px 8px;justify-self:start;letter-spacing:-0.02em">happy</div>
+            <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:#2f6b45"></div><div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">PASS</div></div>
+            <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">—</div>
+          </div>
+          <div style="display:grid;grid-template-columns:70px 2.4fr 0.9fr 0.8fr 0.9fr;gap:16px;align-items:center;padding:13px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+            <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">c3</div>
+            <div style="font:400 12.5px 'Archivo';color:#17150f">whitespace-only name is rejected</div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:3px 8px;justify-self:start;letter-spacing:-0.02em">edge</div>
+            <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:#2f6b45"></div><div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">PASS</div></div>
+            <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">—</div>
+          </div>
+          <div style="display:grid;grid-template-columns:70px 2.4fr 0.9fr 0.8fr 0.9fr;gap:16px;align-items:center;padding:13px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+            <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">c4</div>
+            <div style="font:400 12.5px 'Archivo';color:#17150f">name at the 255-character limit is accepted</div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:3px 8px;justify-self:start;letter-spacing:-0.02em">edge</div>
+            <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:#2f6b45"></div><div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">PASS</div></div>
+            <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">—</div>
+          </div>
+          <div style="display:grid;grid-template-columns:70px 2.4fr 0.9fr 0.8fr 0.9fr;gap:16px;align-items:center;padding:13px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+            <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">c5</div>
+            <div style="font:400 12.5px 'Archivo';color:#17150f">unauthenticated request is refused</div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:3px 8px;justify-self:start;letter-spacing:-0.02em">auth</div>
+            <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:#2f6b45"></div><div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">PASS</div></div>
+            <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">—</div>
+          </div>
+          <div style="display:grid;grid-template-columns:70px 2.4fr 0.9fr 0.8fr 0.9fr;gap:16px;align-items:center;padding:13px 0;border-bottom:1px solid #ddd6c8;transition:background .18s" style-hover="background:#f2ede2">
+            <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">c6</div>
+            <div style="font:400 12.5px 'Archivo';color:#17150f">duplicate name returns the existing item</div>
+            <div style="font:400 9px 'Martian Mono';color:#5c564a;border:1px solid #d6cfc0;padding:3px 8px;justify-self:start;letter-spacing:-0.02em">happy</div>
+            <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:#2f6b45"></div><div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">PASS</div></div>
+            <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.02em">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 04b-2 FAILURE DRAWER -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">04b-2 · FAILURE DRAWER — SLIDES IN OVER THE CASE TABLE</div>
+    <div data-screen-label="04b failure drawer" style="width:1440px;height:640px;background:#efeadf;border:1px solid #d6cfc0;box-sizing:border-box;display:flex">
+      <div style="flex:1;min-width:0;padding:40px;opacity:0.4">
+        <div style="font:600 22px 'Archivo';color:#17150f;letter-spacing:-0.025em">POST /api/items rejects an item with no name</div>
+        <div style="font:600 26px 'Archivo';color:#17150f;letter-spacing:-0.03em;margin-top:14px">PASS 5/6 <span style="font:500 12px 'Martian Mono';color:#a32b21">— 1 FAIL</span></div>
+      </div>
+      <div style="width:560px;flex:none;background:#fffdf8;border-left:1px solid #d6cfc0;display:flex;flex-direction:column;box-shadow:-24px 0 48px -36px #17150f">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 26px;border-bottom:2px solid #17150f">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">c2</div>
+            <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:repeating-linear-gradient(45deg,#a32b21 0 2px,#fffdf8 2px 4px)"></div><div style="font:500 9.5px 'Martian Mono';color:#a32b21;letter-spacing:0.04em">FAIL · MAJOR</div></div>
+          </div>
+          <div style="font:400 12px 'Archivo';color:#8a8378">✕</div>
+        </div>
+        <div style="padding:22px 26px;display:flex;flex-direction:column;gap:22px;overflow:auto">
+          <div style="font:600 17px/1.4 'Archivo';color:#17150f;letter-spacing:-0.02em">empty name is accepted with 201</div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">REQUEST</div>
+              <div style="font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;transition:color .18s" style-hover="color:#8e3f16">COPY</div>
+            </div>
+            <div style="background:#f1ece0;border-left:3px solid #17150f;padding:13px 15px;font:400 10px/1.75 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre-wrap;overflow-x:auto">POST /api/items HTTP/1.1
+host: 127.0.0.1:3000
+content-type: application/json
+
+{"name":"","qty":5}</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">RESPONSE</div>
+              <div style="font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;transition:color .18s" style-hover="color:#8e3f16">COPY</div>
+            </div>
+            <div style="background:#f6ece9;border-left:3px solid #a32b21;padding:13px 15px;font:400 10px/1.75 'Martian Mono';color:#17150f;letter-spacing:-0.045em;white-space:pre-wrap;overflow-x:auto">201 Created
+content-type: application/json
+
+{"id":"itm_8813","name":"","qty":5}</div>
+            <div style="font:400 11.5px/1.6 'Archivo';color:#5c564a">Expected 400 with a validation error. The row is now in the database with an empty name.</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">REPRO</div>
+            <div style="display:flex;gap:12px"><div style="font:400 9.5px 'Martian Mono';color:#b4531f;flex:none">1</div><div style="font:400 12.5px/1.55 'Archivo';color:#5c564a">Start the backend on :3000 with a clean database.</div></div>
+            <div style="display:flex;gap:12px"><div style="font:400 9.5px 'Martian Mono';color:#b4531f;flex:none">2</div><div style="font:400 12.5px/1.55 'Archivo';color:#5c564a">POST the body above to /api/items.</div></div>
+            <div style="display:flex;gap:12px"><div style="font:400 9.5px 'Martian Mono';color:#b4531f;flex:none">3</div><div style="font:400 12.5px/1.55 'Archivo';color:#5c564a">Observe 201 instead of 400, then GET /api/items and see the empty row.</div></div>
+          </div>
+        </div>
+        <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;padding:16px 26px;border-top:1px solid #ddd6c8">
+          <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">case 2 of 6</div>
+          <div style="display:flex;gap:16px"><div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">← PREV</div><div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:0.06em">NEXT →</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 04c DESIGN LOOP -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">04c · TASK DETAIL — DESIGN LOOP</div>
+
+    <div data-screen-label="04c design loop" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 40px;border-bottom:1px solid #ddd6c8">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">← LEDGER</div>
+          <div style="font:500 11px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+        </div>
+        <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">SETTINGS</div>
+      </div>
+
+      <div style="padding:26px 40px 0">
+        <div style="height:2px;background:#17150f"></div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:20px 0 18px;border-bottom:1px solid #ddd6c8">
+          <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font:400 15px 'Martian Mono';color:#17150f;letter-spacing:-0.05em">design-loop-20260821-173002</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;border:1.5px solid #96631a;box-sizing:border-box;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#96631a;letter-spacing:-0.02em">AWAITING FEEDBACK</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:26px;flex-wrap:wrap">
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">TYPE</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">design-loop</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">AGENT</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">ui-designer</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">PROVIDER</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">anthropic / claude-sonnet-4-5</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">CREATED</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">21 Aug 17:30</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">DURATION</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">6m41s</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:11px 14px;max-width:640px">
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npx tsx src/cli.ts design-loop --workspace gold-token</div>
+              <div style="margin-left:auto;font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;flex:none;transition:color .18s" style-hover="color:#8e3f16">COPY</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;flex:none;padding-left:32px">
+            <div style="display:flex;align-items:baseline;gap:14px">
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">ARTIFACTS</div>
+              <div style="font:400 10px 'Martian Mono';color:#b4531f;letter-spacing:-0.03em;border-bottom:1px solid #b4531f">shots</div>
+              <div style="font:400 10px 'Martian Mono';color:#b4531f;letter-spacing:-0.03em;border-bottom:1px solid #b4531f">video</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;border:1px solid #d6cfc0;padding:6px 10px">
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">COMPARE WITH</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">20260819-0922</div>
+              <div style="font:400 8px 'Archivo';color:#6b6459">▼</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:22px;padding:14px 0 0">
+          <div style="font:500 10px 'Martian Mono';color:#17150f;letter-spacing:0.12em;border-bottom:2px solid #b4531f;padding-bottom:6px">RESULT</div>
+          <div style="font:500 10px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;padding-bottom:6px;transition:color .18s" style-hover="color:#17150f">LOG</div>
+        </div>
+      </div>
+
+      <div style="padding:26px 40px 44px;display:grid;grid-template-columns:1fr 340px;gap:40px;align-items:start">
+
+        <div style="display:flex;flex-direction:column;gap:28px;min-width:0">
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:9px">
+              <div style="font:600 18px 'Archivo';color:#17150f;letter-spacing:-0.02em">home</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">2 shots · then / now</div>
+            </div>
+            <div style="display:flex;gap:20px">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">DESKTOP · 1440</div>
+                <div style="width:520px;height:300px;background:repeating-linear-gradient(135deg,#ece5d7 0 6px,#f4efe4 6px 12px);border:1px solid #ddd6c8;display:flex;align-items:center;justify-content:center"><div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em;text-align:center">desktop screenshot<br>home · 1440×900</div></div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">MOBILE · 375</div>
+                <div style="width:150px;height:300px;background:repeating-linear-gradient(135deg,#ece5d7 0 6px,#f4efe4 6px 12px);border:1px solid #ddd6c8;display:flex;align-items:center;justify-content:center"><div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em;text-align:center">mobile screenshot<br>home · 375×812</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:9px">
+              <div style="font:600 18px 'Archivo';color:#17150f;letter-spacing:-0.02em">about</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">2 shots</div>
+            </div>
+            <div style="display:flex;gap:20px">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">DESKTOP · 1440</div>
+                <div style="width:520px;height:300px;background:repeating-linear-gradient(135deg,#ece5d7 0 6px,#f4efe4 6px 12px);border:1px solid #ddd6c8;display:flex;align-items:center;justify-content:center"><div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em;text-align:center">desktop screenshot<br>about · 1440×900</div></div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">MOBILE · 375</div>
+                <div style="width:150px;height:300px;background:repeating-linear-gradient(135deg,#ece5d7 0 6px,#f4efe4 6px 12px);border:1px solid #ddd6c8;display:flex;align-items:center;justify-content:center"><div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em;text-align:center">mobile screenshot<br>about · 375×812</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:9px">
+              <div style="font:600 18px 'Archivo';color:#17150f;letter-spacing:-0.02em">recording</div>
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">00:42 · nav walkthrough</div>
+            </div>
+            <div style="position:relative;width:690px;height:300px;background:repeating-linear-gradient(135deg,#e6dfd0 0 6px,#eee8db 6px 12px);border:1px solid #ddd6c8;display:flex;align-items:center;justify-content:center">
+              <div style="width:52px;height:52px;border:1.5px solid #17150f;display:flex;align-items:center;justify-content:center;background:#fffdf8"><div style="width:0;height:0;border-left:13px solid #17150f;border-top:8px solid transparent;border-bottom:8px solid transparent;margin-left:3px"></div></div>
+              <div style="position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:12px;padding:10px 14px;background:#f7f4ee;border-top:1px solid #ddd6c8">
+                <div style="font:400 9px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">00:00</div>
+                <div style="flex:1;height:2px;background:#ddd6c8"><div style="width:0%;height:2px;background:#b4531f"></div></div>
+                <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">00:42</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:26px">
+
+          <div style="display:flex;flex-direction:column;gap:12px;border-left:4px solid #96631a;background:#f6f0e2;padding:16px 18px">
+            <div style="font:500 9px 'Martian Mono';color:#96631a;letter-spacing:0.14em">AWAITING FEEDBACK</div>
+            <div style="font:400 12.5px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">The loop stopped here on purpose. It resumes when you send a note back.</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;border-bottom:1px solid #ddd6c8;padding-bottom:8px">JUDGMENT CALLS</div>
+            <div style="display:flex;gap:11px"><div style="font:400 9px 'Martian Mono';color:#b4531f;flex:none;padding-top:3px">01</div><div style="font:400 12.5px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">Kept the old logo lockup — no new asset was provided.</div></div>
+            <div style="display:flex;gap:11px"><div style="font:400 9px 'Martian Mono';color:#b4531f;flex:none;padding-top:3px">02</div><div style="font:400 12.5px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">Collapsed the nav to a single row under 640px instead of a drawer.</div></div>
+            <div style="display:flex;gap:11px"><div style="font:400 9px 'Martian Mono';color:#b4531f;flex:none;padding-top:3px">03</div><div style="font:400 12.5px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">Footer links use the existing route names, not new ones.</div></div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;border-bottom:1px solid #ddd6c8;padding-bottom:8px">FEEDBACK HISTORY</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">19 Aug 09:41 · iteration 1</div>
+              <div style="font:400 12.5px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">Nav is too tall on mobile, and the footer needs the legal links.</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px dotted #ddd6c8">
+              <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">18 Aug 16:02 · iteration 0</div>
+              <div style="font:400 12.5px/1.55 'Archivo';color:#5c564a;text-wrap:pretty">First pass — build the header from the sketch.</div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;border-bottom:1px solid #ddd6c8;padding-bottom:8px">YOUR FEEDBACK</div>
+            <div style="min-height:86px;border-bottom:1px solid #b4531f;padding-bottom:10px;display:flex;align-items:flex-start;gap:2px">
+              <div style="font:400 11.5px/1.7 'Martian Mono';color:#8a8378;letter-spacing:-0.04em">what should change before the next pass…</div>
+              <div style="width:1px;height:15px;background:#b4531f;animation:caret 1s steps(1) infinite;flex:none"></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:10px 12px">
+              <div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:-0.045em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">… design-loop --iterate 20260821-173002</div>
+              <div style="margin-left:auto;font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;flex:none;transition:color .18s" style-hover="color:#8e3f16">COPY</div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;align-items:center;gap:18px">
+              <div style="font:400 10px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">DISCARD</div>
+              <div style="background:#b4531f;color:#fffdf8;font:500 10px 'Martian Mono';letter-spacing:0.08em;padding:11px 20px;transition:background .18s" style-hover="background:#8e3f16">SEND & ITERATE</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 04d RUNNING -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">04d · TASK DETAIL — RUNNING</div>
+      <div style="font:400 10px 'Martian Mono';color:#8a8378">live · the console fills as it works</div>
+    </div>
+
+    <div data-screen-label="04d running" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 40px;border-bottom:1px solid #ddd6c8">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">← LEDGER</div>
+          <div style="font:500 11px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+        </div>
+        <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">SETTINGS</div>
+      </div>
+
+      <div style="padding:26px 40px 0">
+        <div style="height:2px;background:#17150f"></div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:20px 0 18px;border-bottom:1px solid #ddd6c8">
+          <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font:400 15px 'Martian Mono';color:#17150f;letter-spacing:-0.05em">{{ taskId }}</div>
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:7px;height:7px;background:#b4531f;animation:tick 1.4s ease-in-out infinite;flex:none"></div>
+                <div style="font:500 9.5px 'Martian Mono';color:#b4531f;letter-spacing:-0.02em">RUNNING</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:26px;flex-wrap:wrap">
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">TYPE</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">review</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">AGENT</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">code-reviewer</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">PROVIDER</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">lmstudio / qwen3-coder-30b-a3b-instruct</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">BASE</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">main</div></div>
+              <div style="display:flex;align-items:baseline;gap:8px"><div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">ELAPSED</div><div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">{{ elapsed }}</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;background:#f1ece0;border-left:3px solid #17150f;padding:11px 14px;max-width:640px">
+              <div style="font:400 10px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npx tsx src/cli.ts review --workspace gold-token</div>
+              <div style="margin-left:auto;font:400 9px 'Martian Mono';color:#b4531f;letter-spacing:0.06em;flex:none;transition:color .18s" style-hover="color:#8e3f16">COPY</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:14px;flex:none;padding-left:32px">
+            <div style="border:1.5px solid #a32b21;color:#a32b21;font:500 10px 'Martian Mono';letter-spacing:0.08em;padding:10px 18px;transition:background .18s,color .18s" style-hover="background:#a32b21;color:#fffdf8">CANCEL RUN</div>
+            <div style="display:flex;align-items:baseline;gap:14px">
+              <div style="font:500 8.5px 'Martian Mono';color:#8a8378;letter-spacing:0.12em">ARTIFACTS</div>
+              <div style="font:400 10px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">pending</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:22px;padding:14px 0 0">
+          <div style="font:500 10px 'Martian Mono';color:#8a8378;letter-spacing:0.12em;padding-bottom:6px">RESULT</div>
+          <div style="font:500 10px 'Martian Mono';color:#17150f;letter-spacing:0.12em;border-bottom:2px solid #b4531f;padding-bottom:6px">LOG</div>
+        </div>
+      </div>
+
+      <div style="padding:22px 40px 40px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:center;gap:16px">
+            <div style="display:flex;align-items:baseline;gap:8px"><div style="font:600 22px 'Archivo';color:#17150f;letter-spacing:-0.03em">{{ elapsed }}</div><div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">elapsed</div></div>
+            <div style="width:1px;height:16px;background:#ddd6c8"></div>
+            <div style="display:flex;align-items:baseline;gap:8px">{{ findingsNode }}<div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">findings so far</div></div>
+            <div style="width:1px;height:16px;background:#ddd6c8"></div>
+            <div style="font:400 9.5px 'Martian Mono';color:#a32b21;letter-spacing:-0.03em">{{ severityLine }}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:6px;height:6px;background:#b4531f;animation:tick 1.4s ease-in-out infinite"></div>
+            <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:0.06em">AUTO-SCROLL</div>
+          </div>
+        </div>
+
+        <div style="position:relative;height:3px;background:#e2dbcc">
+          <div style="{{ barStyle }}"></div>
+          <div style="{{ nibStyle }}"></div>
+        </div>
+
+        <div style="background:#f1ece0;border-left:3px solid #17150f;padding:18px 20px;height:300px;overflow:auto;display:flex;flex-direction:column;gap:8px">
+          <div style="font:400 10.5px/1.7 'Martian Mono';color:#a19a8d;letter-spacing:-0.045em;white-space:pre">09:58:30  run started · workspace gold-token · base main</div>
+          <div style="font:400 10.5px/1.7 'Martian Mono';color:#a19a8d;letter-spacing:-0.045em;white-space:pre">09:58:30  agent code-reviewer · lmstudio / qwen3-coder-30b-a3b-instruct</div>
+          <sc-for list="{{ logLines }}" as="line" hint-placeholder-count="4">
+            <div style="font:400 10.5px/1.7 'Martian Mono';color:#17150f;letter-spacing:-0.045em;animation:rise .35s ease-out;white-space:pre;overflow:hidden;text-overflow:ellipsis">{{ line }}</div>
+          </sc-for>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font:400 10.5px 'Martian Mono';color:#b4531f;letter-spacing:-0.045em">▸</div>
+            <div style="width:6px;height:13px;background:#b4531f;animation:caret 1s steps(1) infinite"></div>
+          </div>
+        </div>
+
+        <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">the result tab fills in the moment the verdict lands — nothing to refresh</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 04d-2 JUST FINISHED -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">04d-2 · THE MOMENT IT FINISHES</div>
+    <div data-screen-label="04d finished" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;padding:30px 40px 34px;display:flex;flex-direction:column;gap:18px">
+      <div style="height:2px;background:#17150f"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font:400 15px 'Martian Mono';color:#17150f;letter-spacing:-0.05em">review-20260822-095830</div>
+          <div style="display:flex;align-items:center;gap:7px"><div style="width:7px;height:7px;background:#2f6b45"></div><div style="font:500 9.5px 'Martian Mono';color:#2f6b45;letter-spacing:-0.02em">DONE</div></div>
+          <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">2m34s</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:20px">
+          <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">ARCHIVE</div>
+          <div style="background:#b4531f;color:#fffdf8;font:500 10px 'Martian Mono';letter-spacing:0.08em;padding:11px 20px;transition:background .18s" style-hover="background:#8e3f16">OPEN RESULT</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:18px;border-left:4px solid #a32b21;background:#f6ece9;padding:16px 20px">
+        <div style="font:600 22px 'Archivo';color:#a32b21;letter-spacing:-0.03em">REQUEST CHANGES</div>
+        <div style="font:400 13px 'Archivo';color:#5c564a">6 findings (3 MAJOR, 1 MINOR, 2 NIT) across 3 changed files.</div>
+      </div>
+      <div style="background:#f1ece0;border-left:3px solid #17150f;padding:14px 18px;display:flex;flex-direction:column;gap:7px">
+        <div style="font:400 10.5px/1.6 'Martian Mono';color:#a19a8d;letter-spacing:-0.045em">10:00:51  app.mjs:88 unused import → NIT</div>
+        <div style="font:400 10.5px/1.6 'Martian Mono';color:#17150f;letter-spacing:-0.045em">10:01:12  verdict: REQUEST CHANGES</div>
+        <div style="font:400 10.5px/1.6 'Martian Mono';color:#17150f;letter-spacing:-0.045em">10:01:12  run finished in 2m34s · artifacts: diff</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 05 SETTINGS -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="font:500 10px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">05 · WORKSPACE SETTINGS</div>
+
+    <div data-screen-label="05 settings" style="width:1440px;background:#f7f4ee;border:1px solid #d6cfc0;box-sizing:border-box;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 40px;border-bottom:1px solid #ddd6c8">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font:400 9.5px 'Martian Mono';color:#6b6459;letter-spacing:0.06em">← LEDGER</div>
+          <div style="font:500 11px 'Martian Mono';color:#17150f;letter-spacing:-0.02em">gold-token</div>
+          <div style="font:400 10px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em">/Users/deniz/code/gold-token</div>
+        </div>
+        <div style="font:400 9.5px 'Martian Mono';color:#17150f;letter-spacing:0.06em;border-bottom:2px solid #b4531f;padding-bottom:3px">SETTINGS</div>
+      </div>
+
+      <div style="display:flex;padding:40px;gap:44px">
+        <div style="width:180px;flex:none;display:flex;flex-direction:column;gap:12px">
+          <div style="font:500 9.5px 'Martian Mono';color:#b4531f;letter-spacing:0.14em">SECTIONS</div>
+          <div style="font:400 11px/2 'Martian Mono';color:#5c564a;letter-spacing:-0.03em">defaults<br>agent overrides<br>app<br>admin</div>
+        </div>
+
+        <div style="flex:1;min-width:0;max-width:860px;display:flex;flex-direction:column;gap:40px">
+
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:9px">
+              <div style="font:600 19px 'Archivo';color:#17150f;letter-spacing:-0.02em">Defaults</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">used by every task unless overridden</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:32px">
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">PROVIDER</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #17150f;padding-bottom:9px">
+                  <div style="font:400 12px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">lmstudio</div>
+                  <div style="font:400 8px 'Archivo';color:#6b6459">▼</div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">MODEL ID</div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:9px;font:400 12px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">qwen3-coder-30b-a3b-instruct</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:18px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:9px">
+              <div style="font:600 19px 'Archivo';color:#17150f;letter-spacing:-0.02em">Agent overrides</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">per-agent, falls back to the defaults above</div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:180px 1fr 1.3fr;gap:24px;align-items:center;padding-bottom:14px;border-bottom:1px dotted #ddd6c8">
+              <div style="font:400 12px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">ui-designer</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ddd6c8;padding-bottom:7px">
+                <div style="font:400 11px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">inherit (lmstudio)</div>
+                <div style="font:400 8px 'Archivo';color:#6b6459">▼</div>
+              </div>
+              <div style="border-bottom:1px solid #ddd6c8;padding-bottom:7px;font:400 11px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em">inherit (qwen3-coder-30b-a3b-instruct)</div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:180px 1fr 1.3fr;gap:24px;align-items:center;padding-bottom:14px;border-bottom:1px dotted #ddd6c8">
+              <div style="font:400 12px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">qa-tester</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #17150f;padding-bottom:7px">
+                <div style="font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">openai</div>
+                <div style="font:400 8px 'Archivo';color:#6b6459">▼</div>
+              </div>
+              <div style="border-bottom:1px solid #17150f;padding-bottom:7px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">gpt-5-mini</div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:grid;grid-template-columns:180px 1fr 1.3fr;gap:24px;align-items:center">
+                <div style="font:400 12px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">code-reviewer</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #a32b21;padding-bottom:7px">
+                  <div style="font:400 11px 'Martian Mono';color:#a32b21;letter-spacing:-0.03em">claude-cli</div>
+                  <div style="font:400 8px 'Archivo';color:#a32b21">▼</div>
+                </div>
+                <div style="border-bottom:1px solid #ddd6c8;padding-bottom:7px;font:400 11px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em">—</div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:10px;border-left:3px solid #a32b21;background:#f6ece9;padding:11px 14px">
+                <div style="width:7px;height:7px;background:repeating-linear-gradient(45deg,#a32b21 0 2px,#f6ece9 2px 4px);flex:none;margin-top:4px"></div>
+                <div style="font:400 12px/1.55 'Archivo';color:#7a2d24;text-wrap:pretty">claude-cli works only via the .claude/ native path — CLI runs will refuse it.</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:9px">
+              <div style="font:600 19px 'Archivo';color:#17150f;letter-spacing:-0.02em">App</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">how the panel starts and reaches your app</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px 32px">
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">BACKEND START</div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npm run dev --prefix api</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">BACKEND PORT</div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">3000</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">FRONTEND START</div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">npm run dev --prefix web</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">FRONTEND PORT</div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">5173</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">BASE URL</div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">http://127.0.0.1:3000</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">HEALTH PATH</div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.03em">/healthz</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">STAGING URL</div>
+                <div style="border-bottom:1px solid #ddd6c8;padding-bottom:8px;font:400 11px 'Martian Mono';color:#8a8378;letter-spacing:-0.04em">https://staging.gold-token.dev</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">TEST ACCOUNT USER</div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">qa@gold-token.dev</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="display:flex;align-items:baseline;gap:10px">
+                  <div style="font:500 9px 'Martian Mono';color:#6b6459;letter-spacing:0.14em">PASSWORD ENV VAR</div>
+                  <div style="font:400 9px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">name only, never the value</div>
+                </div>
+                <div style="border-bottom:1px solid #17150f;padding-bottom:8px;font:400 11px 'Martian Mono';color:#17150f;letter-spacing:-0.04em">GOLD_TOKEN_QA_PASSWORD</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #17150f;padding-bottom:9px">
+              <div style="font:600 19px 'Archivo';color:#17150f;letter-spacing:-0.02em">Workspace</div>
+              <div style="font:400 9.5px 'Martian Mono';color:#8a8378;letter-spacing:-0.03em">registry only — the repo is never touched</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;border-bottom:1px dotted #ddd6c8">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font:500 14px 'Archivo';color:#17150f;letter-spacing:-0.01em">Rename workspace</div>
+                <div style="font:400 12px 'Archivo';color:#5c564a">Only the label in this panel changes.</div>
+              </div>
+              <div style="border:1px solid #17150f;color:#17150f;font:500 9.5px 'Martian Mono';letter-spacing:0.08em;padding:9px 16px;transition:background .18s,color .18s" style-hover="background:#17150f;color:#f7f4ee">RENAME</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font:500 14px 'Archivo';color:#17150f;letter-spacing:-0.01em">Forget workspace</div>
+                <div style="font:400 12px 'Archivo';color:#5c564a">Removes the registry entry and its run history from the panel. The repository on disk stays exactly as it is.</div>
+              </div>
+              <div style="border:1px solid #a32b21;color:#a32b21;font:500 9.5px 'Martian Mono';letter-spacing:0.08em;padding:9px 16px;transition:background .18s,color .18s" style-hover="background:#a32b21;color:#fffdf8">FORGET</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showEntryExtras&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Artboards&quot;},&quot;showDashExtras&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Artboards&quot;}}">
+class Component extends DCLogic {
+  state = { t: 0 };
+
+  componentDidMount() {
+    this.iv = setInterval(() => this.setState(s => ({ t: s.t + 1 })), 1000);
+  }
+  componentWillUnmount() {
+    clearInterval(this.iv);
+  }
+
+  renderVals() {
+    const CYCLE = 58, RUN = 44, START = 72;
+    const t = this.state.t;
+    const cycle = Math.floor(t / CYCLE);
+    const p = t % CYCLE;
+    const running = p < RUN;
+    const secs = START + Math.min(p, RUN);
+    const pad = n => String(n).padStart(2, '0');
+    const pct = running ? Math.min(96, 58 + p * 0.9) : 100;
+    const findings = running ? 3 + Math.min(3, Math.floor(p / 11)) : 6;
+    const majors = running ? 2 + Math.min(1, Math.floor(p / 22)) : 3;
+    const minors = findings > 4 ? 1 : 0;
+
+    const startMin = 58 + cycle * 3;
+    const startClock = '10:' + pad(startMin % 60);
+    const taskId = 'review-20260822-' + pad(9 + Math.floor(startMin / 60)) + pad(startMin % 60) + '30';
+
+    const feed = [
+      '09:58:31 diff vs main (3 files)',
+      '09:58:34 lmstudio ready',
+      '09:58:52 server.mjs:22 token → MAJOR',
+      '09:59:07 server.mjs:60 validation → MAJOR',
+      '09:59:41 scanning migrate.mjs',
+      '10:00:03 migrate.mjs:14 rollback → MINOR',
+      '10:00:22 scanning app.mjs',
+      '10:00:51 app.mjs:88 unused → NIT',
+      '10:01:12 verdict: REQUEST CHANGES'
+    ];
+    const steps = ['scanning api/server.mjs', 'scanning db/migrate.mjs', 'scanning web/app.mjs', 'collating findings'];
+    const shown = running ? Math.min(feed.length, 4 + Math.floor(p / 8)) : feed.length;
+
+    const findingsNode = React.createElement('div', {
+      key: 'f' + findings,
+      style: { font: "600 20px 'Archivo'", color: '#17150f', letterSpacing: '-0.02em', animation: 'flip .35s ease-out' }
+    }, String(findings));
+
+    const verdictStamp = React.createElement('div', {
+      key: 'v' + cycle,
+      style: {
+        alignSelf: 'flex-start', border: '2px solid #a32b21', color: '#a32b21',
+        padding: '7px 10px', font: "500 11px 'Martian Mono'", letterSpacing: '0.04em',
+        transform: 'rotate(-3deg)', animation: 'stamp .5s cubic-bezier(.2,1.5,.4,1)'
+      }
+    }, 'REQUEST CHANGES');
+
+    return {
+      isRunning: running,
+      isDone: !running,
+      taskId,
+      startClock,
+      elapsed: Math.floor(secs / 60) + 'm' + pad(secs % 60) + 's',
+      findings,
+      findingsNode,
+      verdictStamp,
+      currentStep: steps[Math.min(steps.length - 1, Math.floor(p / 12))],
+      severityLine: majors + ' MAJOR · ' + minors + ' MINOR · ' + Math.max(0, findings - majors - minors) + ' NIT',
+      barStyle: 'width:' + pct.toFixed(1) + '%;height:2px;background:#b4531f;transition:width .9s linear',
+      nibStyle: 'position:absolute;top:-3px;left:calc(' + pct.toFixed(1) + '% - 3px);width:6px;height:8px;background:#17150f;transition:left .9s linear',
+      logLines: feed.slice(Math.max(0, shown - 4), shown),
+      showEntryExtras: this.props.showEntryExtras ?? true,
+      showDashExtras: this.props.showDashExtras ?? true
+    };
+  }
+}
+</script>
+</body>
+</html>

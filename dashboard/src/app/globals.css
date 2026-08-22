@@ -1,72 +1,108 @@
 @import "tailwindcss";
 
 /*
- * Theme approach (one approach, used consistently — T17 requirement):
+ * The "Ledger" design system (docs/design-reference/HANDOFF-ledger.md).
  *
- *   Every colour in the panel is a CSS variable on `:root`, and the ONLY place dark mode exists
- *   is the `prefers-color-scheme` block below. There is no theme toggle and no `dark:` variant
- *   anywhere in the components — a component that wrote `bg-white dark:bg-zinc-900` would be one
- *   more pair of colours to keep in sync, and the pair that got forgotten is exactly how a local
- *   tool ends up unreadable at night. Add a colour here, in both blocks, or not at all.
+ * Paper instead of a console: one warm light palette, one burnt-orange accent, rules instead of
+ * boxes, zero radius, no shadows except three docked/floating surfaces. There is deliberately NO
+ * dark variant — the design is a single paper theme, and a half-ported dark mode is how a local
+ * tool ends up with two palettes that disagree. `color-scheme: light` keeps the browser's own
+ * chrome (scrollbars, form controls, the canvas behind the page) in step.
  *
- * `color-scheme` is set too, so scrollbars, form controls and the canvas the browser paints
- * behind the page follow along.
+ * Token names are kept from the previous theme (`--bg`, `--surface`, `--line`, `--fg`, `--muted`,
+ * `--link`, the status pairs) so every existing component picked up the new palette the moment
+ * this file changed; the Ledger-specific tokens are added below them.
  */
 :root {
   color-scheme: light;
 
-  --bg: #f6f6f7;
-  --surface: #ffffff;
-  --surface-2: #f1f1f3;
-  --line: #e0e0e4;
-  --fg: #17171a;
-  --muted: #6c6c78;
-  --link: #2450c8;
+  /* paper */
+  --bg: #f7f4ee; /* paper — screen background */
+  --surface: #fffdf8; /* paper-card — slips, drawers, diff panel */
+  --surface-2: #f1ece0; /* paper-tint — command strips, log console, active row */
+  --paper-hover: #f2ede2;
+  --canvas: #e8e3d8;
 
-  /* status: running=blue, done=green, error=red, cancelled=gray (T17 step 4) */
-  --running-fg: #14449c;
-  --running-bg: #dbe7fd;
-  --done-fg: #14663a;
-  --done-bg: #d6f3e2;
-  --error-fg: #9c1c1c;
-  --error-bg: #fbdfdf;
-  --cancelled-fg: #4c4c56;
-  --cancelled-bg: #e4e4e8;
+  /* ink */
+  --fg: #17150f; /* ink — primary text, 2px rules, primary button fill */
+  --ink-2: #5c564a; /* body copy, secondary values */
+  --ink-3: #6b6459; /* field labels, quiet actions */
+  --muted: #8a8378; /* ink-4 — meta, column headers, disabled */
+  --ink-faint: #a19a8d; /* earlier log lines */
+  --gutter: #a8a094; /* diff line numbers */
+
+  /* rules */
+  --line: #ddd6c8; /* rule — 1px hairlines */
+  --rule-2: #d6cfc0; /* screen border, chip border */
+  --rule-dotted: #c9c1b0; /* dotted leaders */
+
+  /* the one live mark */
+  --accent: #b4531f;
+  --accent-hover: #8e3f16;
+  --link: #b4531f;
+
+  /* semantic */
+  --ok: #2f6b45;
+  --danger: #a32b21;
+  --danger-tint: #f6ece9;
+  --danger-deep: #5c1512;
+  --warn: #96631a;
+  --warn-tint: #f6f0e2;
+
+  /* diff */
+  --diff-add: #e7efe6;
+  --diff-del: #f7e6e3;
+  --diff-del-ink: #7a2d24;
+
+  /*
+   * Status pairs. Colour is never the whole signal — every status also carries a word and a
+   * shape (see `.mark-*` below), which is what keeps it readable for a red-green colour-blind
+   * reader and in a greyscale screenshot.
+   */
+  --running-fg: #b4531f;
+  --running-bg: #f1ece0;
+  --done-fg: #2f6b45;
+  --done-bg: #eef2ea;
+  --error-fg: #a32b21;
+  --error-bg: #f6ece9;
+  --cancelled-fg: #8a8378;
+  --cancelled-bg: #f1ece0;
+  --awaiting-fg: #96631a;
+  --awaiting-bg: #f6f0e2;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-
-    --bg: #0c0c0f;
-    --surface: #16161a;
-    --surface-2: #1e1e24;
-    --line: #2c2c34;
-    --fg: #ececf1;
-    --muted: #9a9aa8;
-    --link: #86aaf7;
-
-    --running-fg: #a9c8ff;
-    --running-bg: #17284a;
-    --done-fg: #8ee0ae;
-    --done-bg: #123424;
-    --error-fg: #ffa9a9;
-    --error-bg: #3d1a1a;
-    --cancelled-fg: #b9b9c6;
-    --cancelled-bg: #26262e;
-  }
-}
-
-/* `inline` keeps the utilities pointing at the live variable, so the media query above swaps
-   every Tailwind colour utility at once instead of baking today's value into the class. */
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
-  --color-line: var(--line);
+  --color-paper-hover: var(--paper-hover);
+  --color-canvas: var(--canvas);
+
   --color-fg: var(--fg);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
   --color-muted: var(--muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-gutter: var(--gutter);
+
+  --color-line: var(--line);
+  --color-rule-2: var(--rule-2);
+  --color-rule-dotted: var(--rule-dotted);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-link: var(--link);
+
+  --color-ok: var(--ok);
+  --color-danger: var(--danger);
+  --color-danger-tint: var(--danger-tint);
+  --color-danger-deep: var(--danger-deep);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+
+  --color-diff-add: var(--diff-add);
+  --color-diff-del: var(--diff-del);
+  --color-diff-del-ink: var(--diff-del-ink);
 
   --color-running-fg: var(--running-fg);
   --color-running-bg: var(--running-bg);
@@ -76,22 +112,284 @@
   --color-error-bg: var(--error-bg);
   --color-cancelled-fg: var(--cancelled-fg);
   --color-cancelled-bg: var(--cancelled-bg);
+  --color-awaiting-fg: var(--awaiting-fg);
+  --color-awaiting-bg: var(--awaiting-bg);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
-    monospace;
+  /* `--font-archivo` / `--font-martian` are injected by next/font in layout.tsx. */
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-martian), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --radius-none: 0px;
 }
 
 /*
- * NOTE: there is deliberately no `overflow-x: hidden` on <html> here. It would make the "does
- * the page scroll sideways" check pass while the content was simply clipped off-screen. Wide
- * things (the run table, the log, artifact paths) each scroll or wrap inside their own box —
- * `overflow-x-auto` on the wrapper, `min-w-0` on the flex child, `break-all` on long literals —
- * so the page genuinely fits a 375px window.
+ * NOTE: there is deliberately no `overflow-x: hidden` on <html>. It would make the "does the page
+ * scroll sideways" check pass while the content was simply clipped off-screen. Wide things (the
+ * diff, the log, the ledger table) each scroll inside their own box instead.
  */
 body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Radius 0 everywhere — the design has no rounded corners at all. */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+
+/* ---------------------------------------------------------------- type helpers */
+
+/* Martian Mono is wide; every mono run carries negative tracking (handoff § Type). */
+.mono {
+  font-family: var(--font-mono);
+  letter-spacing: -0.045em;
+}
+
+/* field label / small caps */
+.label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* table column header */
+.colhead {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* status word next to a mark */
+.statusword {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+/* button label */
+.btnlabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title-screen {
+  font-size: 46px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.title-section {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.title-verdict {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+/* ---------------------------------------------------------------- marks */
+
+/*
+ * A status is a 7px square whose SHAPE carries the meaning as much as its colour: solid for
+ * running/done, hatched for error, hollow for awaiting, dashed for cancelled. Always render it
+ * next to its word — `.mark-*` on its own is not a label.
+ */
+.mark {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: none;
+}
+.mark-running {
+  background: var(--accent);
+  animation: tick 1.4s ease-in-out infinite;
+}
+.mark-done {
+  background: var(--ok);
+}
+.mark-error {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--danger) 0 1.5px,
+    transparent 1.5px 3px
+  );
+  outline: 1px solid var(--danger);
+  outline-offset: -1px;
+}
+.mark-awaiting {
+  border: 1.5px solid var(--warn);
+}
+.mark-cancelled {
+  border: 1px dashed var(--muted);
+}
+.mark-blocker {
+  background: var(--danger-deep);
+}
+.mark-major {
+  background: var(--danger);
+}
+.mark-minor {
+  border: 1.5px solid var(--warn);
+}
+.mark-nit {
+  border: 1px dashed var(--muted);
+}
+
+/* ---------------------------------------------------------------- surfaces */
+
+/* command / evidence block: tint + 3px ink left border (handoff § Geometry) */
+.cmd-strip {
+  background: var(--surface-2);
+  border-left: 3px solid var(--fg);
+}
+
+/* dotted leader that fills the gap in a contents row */
+.leader {
+  flex: 1 1 auto;
+  border-bottom: 1px dotted var(--rule-dotted);
+  margin: 0 12px;
+  transform: translateY(-3px);
+}
+
+/* fields are underlines, not boxes */
+.field {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  color: var(--fg);
+  outline: none;
+}
+.field:not(:placeholder-shown) {
+  border-bottom-color: var(--fg);
+}
+.field:focus {
+  border-bottom-color: var(--accent);
+}
+
+/* the three surfaces that are allowed a shadow */
+.shadow-slip-right {
+  box-shadow: -24px 0 48px -36px #17150f;
+}
+.shadow-slip-center {
+  box-shadow: 0 20px 44px -34px #17150f;
+}
+
+/* ---------------------------------------------------------------- motion */
+
+@keyframes tick {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes stamp {
+  0% {
+    transform: scale(1.7) rotate(-9deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(0.93) rotate(-2deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-3deg);
+    opacity: 1;
+  }
+}
+@keyframes flip {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.anim-caret {
+  animation: caret 1s step-end infinite;
+}
+.anim-rise {
+  animation: rise 0.35s ease-out;
+}
+.anim-draw {
+  transform-origin: left;
+  animation: draw 0.85s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.anim-stamp {
+  animation: stamp 0.5s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+.anim-flip {
+  animation: flip 0.35s ease-out;
+}
+
+/*
+ * Reduced motion drops the decoration and keeps the information: the running square stops
+ * pulsing but stays solid accent, and values still update.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .mark-running,
+  .anim-caret,
+  .anim-rise,
+  .anim-draw,
+  .anim-stamp,
+  .anim-flip {
+    animation: none !important;
+  }
 }
