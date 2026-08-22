@@ -21,9 +21,16 @@ export function StatusBadge({ status, className = "" }: { status: RunStatus; cla
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${STYLES[status]} ${className}`}
     >
       {status === "running" ? (
-        // The only animation in the panel, and it earns its place: it is what tells you at a
-        // glance that a run is still being written to while you are looking at it.
-        <span className="size-1.5 animate-pulse rounded-full bg-current" aria-hidden />
+        // T22 step 3 asks for a spinner in every run table, and it earns its place: it is what
+        // tells you at a glance that a run is still being written to while you are looking at it.
+        // A rotating ring rather than the pulsing dot this was: a pulse reads as "highlighted",
+        // a spinner reads as "working", and the difference matters on a page where three of the
+        // four statuses are also coloured pills.
+        <span
+          data-running-spinner
+          className="size-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+          aria-hidden
+        />
       ) : null}
       {status}
     </span>

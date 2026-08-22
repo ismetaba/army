@@ -2,6 +2,7 @@ import Link from "next/link";
 import { awHome, listRuns, listWorkspaceSummaries } from "@/lib/store";
 import { formatAgo } from "@/lib/format";
 import { RunTable } from "@/components/run-table";
+import { RunPoller } from "@/components/run-poller";
 
 /**
  * Home: what exists (workspaces) and what just happened (latest runs).
@@ -21,6 +22,10 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-8">
+      {/* Across every workspace here, so a run started in one shows up while you are looking at
+          another — and so home's table refreshes when it finishes (T22 step 3). */}
+      <RunPoller />
+
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-lg font-semibold tracking-tight">Workspaces</h1>

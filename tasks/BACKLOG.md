@@ -50,9 +50,9 @@ Paste this (fill `T##`):
 - [x] [T17](T17.md) — Dashboard skeleton (workspaces, run list, run detail, artifact API)
 - [x] [T18](T18.md) — Review UI: diff viewer with inline file:line findings
 - [x] [T19](T19.md) — Test report UI: case table + request/response evidence
-- [ ] [T20](T20.md) — Design gallery: screenshots/video, run compare, feedback queue
-- [ ] [T21](T21.md) — Workspace & agent settings management (+ run housekeeping)
-- [ ] [T22](T22.md) — Trigger runs + live SSE logs + cancel from the UI
+- [x] [T20](T20.md) — Design gallery: screenshots/video, run compare, feedback queue
+- [x] [T21](T21.md) — Workspace & agent settings management (+ run housekeeping)
+- [x] [T22](T22.md) — Trigger runs + live SSE logs + cancel from the UI
 
 ## Milestones
 - **M1** T01–T04 · **M2** T05–T10 · **M3** T11–T12 · **M4** T13–T15 · **M5** T16–T22

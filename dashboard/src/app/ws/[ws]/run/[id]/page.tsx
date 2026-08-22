@@ -6,22 +6,23 @@ import { formatBytes, formatDuration, formatWhen } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
 import { ReportPanel } from "@/components/report-panel";
 import { ReviewTab } from "@/components/review-tab";
+import { DesignPanel } from "@/components/design-panel";
 
 export const dynamic = "force-dynamic";
 
 const LOG_TAIL_LINES = 500;
 
 /**
- * The four tabs T17 step 4 fixes. Three of them are type-specific and belong to later tasks:
- * Review → T18, Report → T19, Design → T20. Each is shown only for the run kind it describes
- * (a `review` run has no report), and until its task lands it renders a placeholder that says
- * so — the manifest data behind it already exists, it just has no view yet.
+ * The four tabs T17 step 4 fixes. Three of them are type-specific and were built by their own
+ * task: Review → T18, Report → T19, Design → T20. Each is shown only for the run kind it
+ * describes (a `review` run has no report); for every other kind it is a disabled label rather
+ * than a link, so the tab bar stays the same shape on every run page.
  */
 const TABS = [
-  { id: "review", label: "Review", kind: "review", task: "T18" },
-  { id: "report", label: "Report", kind: "test-feature", task: "T19" },
-  { id: "design", label: "Design", kind: "design-loop", task: "T20" },
-  { id: "log", label: "Log", kind: null, task: null },
+  { id: "review", label: "Review", kind: "review" },
+  { id: "report", label: "Report", kind: "test-feature" },
+  { id: "design", label: "Design", kind: "design-loop" },
+  { id: "log", label: "Log", kind: null },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -29,10 +30,11 @@ type TabId = (typeof TABS)[number]["id"];
 /**
  * Default tab is `log`, deliberately.
  *
- * The type tab of the run's own kind would be the obvious default, but until T18–T20 it renders
- * "coming soon" — so opening any run would show an empty box. `log.txt` is real content for every
- * run, of every kind, including the ones that failed before producing a result block. When the
- * type views land, this is the line to change.
+ * The type tab of the run's own kind is now the obvious default — T18–T20 have all landed, so it
+ * renders real content — but flipping it changes what every review and test-feature page opens
+ * on, which is not T20's to change. Left as `log`, which is real content for every run of every
+ * kind, including the ones that failed before producing a result block. `?tab=design` (and the
+ * tab bar) reaches the type view.
  */
 function parseTab(value: string | string[] | undefined, kind: RunKind): TabId {
   const first = Array.isArray(value) ? value[0] : value;
@@ -98,7 +100,8 @@ export default async function RunPage({ params, searchParams }: PageProps<"/ws/[
           // T19. `parseTab` has already proven this run's kind is `test-feature`.
           <ReportPanel run={run} />
         ) : (
-          <ComingSoon tab={tab} />
+          // T20. `parseTab` has already proven this run's kind is `design-loop`.
+          <DesignPanel run={run} />
         )}
       </div>
     </div>
@@ -158,10 +161,15 @@ function RunHeader({ run }: { run: RunManifest }) {
           <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {artifacts.map((a) =>
               a.present ? (
+                // `break-all` on the label, not just `min-w-0` on the `<li>`: an artifact label is
+                // agent-written run content (a design run's is `${screen} · ${viewport}`), and one
+                // unbroken 300-character token made the whole PAGE scroll sideways — measured at
+                // scrollWidth 2970 against a 1440 viewport. `min-w-0` lets the item shrink; only a
+                // break opportunity lets the text inside it wrap.
                 <li key={a.path} className="min-w-0">
                   <a
                     href={artifactHref(run.workspace, run.runId, a.path)}
-                    className="text-link hover:underline"
+                    className="break-all text-link hover:underline"
                     title={a.path}
                   >
                     {a.label}
@@ -171,7 +179,7 @@ function RunHeader({ run }: { run: RunManifest }) {
                 // The manifest names it, the store does not have it. A link here would 404;
                 // saying so is the whole message.
                 <li key={a.path} className="min-w-0 text-muted" title={a.path}>
-                  <span className="line-through">{a.label}</span>
+                  <span className="break-all line-through">{a.label}</span>
                   <span className="ml-1 text-xs">(file missing)</span>
                 </li>
               ),
@@ -253,20 +261,6 @@ function LogPanel({ ws, id }: { ws: string; id: string }) {
       <pre className="max-h-[70vh] min-w-0 overflow-auto rounded-lg border border-line bg-surface p-3 font-mono text-xs leading-relaxed whitespace-pre">
         {log.text}
       </pre>
-    </div>
-  );
-}
-
-function ComingSoon({ tab }: { tab: TabId }) {
-  const meta = TABS.find((t) => t.id === tab);
-  return (
-    <div className="rounded-lg border border-dashed border-line px-4 py-10 text-center text-sm text-muted">
-      <p className="font-medium text-fg">{meta?.label} view — coming soon</p>
-      <p className="mt-1">
-        Built in {meta?.task}. The data is already in this run&rsquo;s{" "}
-        <span className="font-mono">manifest.json</span>; until then use the Log tab and the
-        artifact links above.
-      </p>
     </div>
   );
 }

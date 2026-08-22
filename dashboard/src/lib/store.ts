@@ -1,10 +1,11 @@
 /**
- * The dashboard's READ side of the run store (T17 step 3).
+ * The dashboard's access to the run store (T17 step 3 — the read side; T21 — the write side).
  *
  * SERVER ONLY. Every function here touches `node:fs`, so this module must never be reached from
  * a `"use client"` component — the import of `node:fs` makes that a hard build error rather than
- * a subtle leak, which is the guarantee we want. Nothing in `src/app/` is a client component;
- * data is read in server components and passed down as plain values.
+ * a subtle leak, which is the guarantee we want. Client components in `src/app/settings/` and
+ * `src/components/run-actions.tsx` reach these functions only through the API routes; data for a
+ * first render is read in server components and passed down as plain values.
  *
  * Why re-implement instead of importing the toolkit's `src/store.ts`: that module is node-only by
  * design (it also owns the WRITE side, installs `process.on('exit')` guards, and its neighbours
@@ -78,6 +79,16 @@ function safeSegment(value: string | undefined | null): string | null {
   return SAFE_SEGMENT.test(trimmed) ? trimmed : null;
 }
 
+/**
+ * Is this a name the CLI could use as a workspace? Exported so `POST /api/workspaces` rejects a
+ * name at registration time with the same rule `aw init`, the toolkit's store and this module
+ * already apply — rather than letting an unusable entry into `workspaces.json` and discovering it
+ * later as a 404 (T17 deviation 15).
+ */
+export function isWorkspaceName(value: string): boolean {
+  return safeSegment(value) !== null;
+}
+
 /** `$AW_HOME/<workspace>/runs`, or `null` when the name is not a usable directory segment. */
 function runsDir(workspace: string): string | null {
   const name = safeSegment(workspace);
@@ -102,8 +113,11 @@ export function runDir(workspace: string, runId: string): string | null {
  * run dir and comparing against the resolved `$AW_HOME` catches both, and the same call is the
  * gate in front of `log.txt`, the manifest and every artifact — the panel reads a store that
  * agents with `write_file` and `bash` also write to.
+ *
+ * Exported since T22: `/api/feedback` needed exactly this function and kept a private copy of it,
+ * which is two places to fix when the containment rule changes. There is one now.
  */
-function realRunDir(workspace: string, runId: string): string | null {
+export function realRunDir(workspace: string, runId: string): string | null {
   const dir = runDir(workspace, runId);
   if (dir === null) return null;
   try {
@@ -112,6 +126,36 @@ function realRunDir(workspace: string, runId: string): string | null {
     return isInside(root, real) ? real : null;
   } catch {
     // A missing store, a dangling symlink, an ELOOP — all of them mean "no such run".
+    return null;
+  }
+}
+
+/**
+ * `<realRunDir>/<name>` for a FIXED file name, proven to be a regular file that still sits inside
+ * the run directory once every symlink is resolved — or `null`.
+ *
+ * The missing half of `realRunDir`. That function proves the DIRECTORY has not been relocated; it
+ * says nothing about the entry inside it, and `path.join(dir, "log.txt")` opened directly follows
+ * a symlink at that name like any other path. An agent has `write_file` and an unconfined `bash`
+ * (SPEC § Tools: only the blocked-pattern regexes apply, and `ln -s` is not one of them), so
+ * `ln -s /etc/passwd $AW_HOME/<ws>/runs/<id>/log.txt` is a thing that can be in the store — and
+ * before this existed, `GET /api/logs?run=` and the run page's Log tab both streamed the target.
+ *
+ * `name` is a constant at every call site (`log.txt`, `spawn.log`, `feedback-queue.json`); it is
+ * still validated as a single safe segment so it can never become a caller-supplied path.
+ * This is `resolveArtifact`'s gate 4 applied to the files that are not artifacts.
+ */
+export function resolveRunFile(workspace: string, runId: string, name: string): string | null {
+  const realDir = realRunDir(workspace, runId);
+  if (realDir === null) return null;
+  if (safeSegment(name) === null) return null;
+  try {
+    const real = fs.realpathSync(path.join(realDir, name));
+    if (!isInside(realDir, real)) return null;
+    if (!fs.statSync(real).isFile()) return null;
+    return real;
+  } catch {
+    // ENOENT (no log yet), ELOOP, EACCES, a dangling link — all of them mean "no such file".
     return null;
   }
 }
@@ -154,6 +198,12 @@ export interface WorkspaceSummary {
   repoRoot: string | null;
   createdAt: string | null;
   runCount: number;
+  /**
+   * Runs sitting in `archive/`. Counted separately because the "forget this workspace" dialog
+   * promises that everything in the store stays where it is, and a workspace whose runs have all
+   * been archived would otherwise make that promise about "0 recorded runs".
+   */
+  archivedCount: number;
   /** `createdAt` of the newest run, or `null` when the workspace has none. */
   lastRunAt: string | null;
   registered: boolean;
@@ -189,6 +239,7 @@ export const listWorkspaceSummaries = cache(function listWorkspaceSummaries(): W
         repoRoot: entry?.repoRoot ?? null,
         createdAt: entry?.createdAt ?? null,
         runCount: runs.length,
+        archivedCount: usable ? listArchivedRuns(name).length : 0,
         lastRunAt: runs[0]?.createdAt ?? null,
         registered: Boolean(entry),
         usable,
@@ -210,7 +261,18 @@ export function workspaceExists(workspace: string): boolean {
 // runs
 // ---------------------------------------------------------------------------
 
-/** Parse one `manifest.json`. `null` for anything unreadable, invalid, or not a RunManifest. */
+/**
+ * Parse one `manifest.json`. `null` for anything unreadable, invalid, or not a RunManifest.
+ *
+ * The returned manifest's `runId` and `workspace` are the ones DERIVED FROM `dir`, not the ones
+ * the file declares, whenever the two disagree. A manifest is run content and run content is
+ * untrusted (SPEC § Dashboard security invariants #3): a directory `runs/foo` whose manifest says
+ * `runId: "bar"` used to make every row in the run table, every artifact link and — since T21 —
+ * the Archive and Delete buttons address `bar`, a directory this manifest was not read from.
+ * (`cp -R` of a run directory was enough to make one row's Delete remove the other row's run.)
+ * Anchoring the identity to the path the bytes came from makes that impossible everywhere at once,
+ * rather than at each of the call sites that happen to remember.
+ */
 function loadManifest(dir: string): RunManifest | null {
   let raw: unknown;
   try {
@@ -219,7 +281,18 @@ function loadManifest(dir: string): RunManifest | null {
     return null;
   }
   const parsed = RunManifest.safeParse(raw);
-  return parsed.success ? parsed.data : null;
+  if (!parsed.success) return null;
+
+  // `$AW_HOME/<ws>/<area>/<runId>` — the layout every caller here walks (SPEC § Storage, plus
+  // T21's `archive/`). Only override when the derived names are usable segments; a directory
+  // somewhere unexpected keeps whatever the file said rather than gaining an empty run id.
+  const derivedRunId = safeSegment(path.basename(dir));
+  const derivedWorkspace = safeSegment(path.basename(path.dirname(path.dirname(dir))));
+  return {
+    ...parsed.data,
+    ...(derivedRunId === null ? {} : { runId: derivedRunId }),
+    ...(derivedWorkspace === null ? {} : { workspace: derivedWorkspace }),
+  };
 }
 
 /**
@@ -293,9 +366,10 @@ export function readLogTail(workspace: string, runId: string, max = 500): LogTai
     bytes: 0,
     error: null,
   };
-  const dir = realRunDir(workspace, runId);
-  if (dir === null) return absent;
-  const file = path.join(dir, "log.txt");
+  // `resolveRunFile`, not `path.join`: a symlink AT `log.txt` would otherwise be followed and its
+  // target rendered on the Log tab. Same gate `/api/logs` uses, for the same file.
+  const file = resolveRunFile(workspace, runId, "log.txt");
+  if (file === null) return absent;
 
   let size: number;
   try {
@@ -508,4 +582,358 @@ export function manifestArtifacts(m: RunManifest): ManifestArtifact[] {
 export function artifactHref(workspace: string, runId: string, relPath: string): string {
   const q = new URLSearchParams({ ws: workspace, run: runId, path: relPath });
   return `/api/artifact?${q.toString()}`;
+}
+
+// ---------------------------------------------------------------------------
+// archive (T21 step 2/3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The two directories a run can live in: `$AW_HOME/<ws>/runs/` and `$AW_HOME/<ws>/archive/`.
+ *
+ * Archiving is a `rename` between the two, which is why `archive/` sits NEXT TO `runs/` rather
+ * than inside it: a directory under `runs/` would be walked by `listRuns` (and by the toolkit's
+ * own `src/store.ts`, which this panel must not surprise), and every archived run would keep
+ * showing up in the table it was archived out of.
+ */
+export type RunArea = "runs" | "archive";
+
+/** `$AW_HOME/<workspace>/<area>`, or `null` when the name is not a usable directory segment. */
+function areaDir(workspace: string, area: RunArea): string | null {
+  const name = safeSegment(workspace);
+  return name === null ? null : path.join(awHome(), name, area);
+}
+
+/** Archived runs of one workspace, newest first. `[]` when there is no `archive/` directory. */
+export function listArchivedRuns(workspace: string): RunManifest[] {
+  const dir = areaDir(workspace, "archive");
+  if (dir === null) return [];
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return []; // nothing archived yet is not an error
+  }
+  const out: RunManifest[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const manifest = loadManifest(path.join(dir, entry.name));
+    if (manifest !== null) out.push(manifest);
+  }
+  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.runId.localeCompare(a.runId));
+}
+
+// ---------------------------------------------------------------------------
+// mutations: the strict gate (T21)
+// ---------------------------------------------------------------------------
+
+/**
+ * The gate in front of every DESTRUCTIVE operation. Stricter than `realRunDir` on purpose.
+ *
+ * `realRunDir` (reads) asks one question: does this path, fully resolved, still sit inside the
+ * resolved store? That is the right question for serving bytes. It is not enough for `rm -r`:
+ * "inside the store" also describes another workspace's run directory, so a `runs/<id>` symlink
+ * pointing at a *sibling* run would pass it and take the sibling's manifest, log and artifacts
+ * with it. Deleting is not undoable, so this gate proves the exact shape instead:
+ *
+ * 1. `ws`, `runId` and the area are single safe segments — no separator, never `.` or `..`
+ *    (percent-decoding already happened in `URLSearchParams`, so `%2e%2e` arrives as `..` here);
+ * 2. the PARENT is resolved with `realpath` and the entry itself is `lstat`ed, so a symlink is
+ *    seen as a symlink and refused rather than followed;
+ * 3. the resolved path is EXACTLY `<realpath($AW_HOME)>/<ws>/<area>/<runId>` — checked segment by
+ *    segment, including that its great-grandparent IS the store root. Nothing shallower, nothing
+ *    deeper, and nothing reached through a relocated workspace or run directory can satisfy it.
+ *
+ * Returns `null` for anything else — the caller answers 404, never a message naming a real path.
+ */
+function mutableRunDir(workspace: string, runId: string, area: RunArea): string | null {
+  const ws = safeSegment(workspace);
+  const id = safeSegment(runId);
+  if (ws === null || id === null) return null;
+  if (area !== "runs" && area !== "archive") return null;
+  try {
+    const root = fs.realpathSync(awHome());
+    const parent = fs.realpathSync(path.join(awHome(), ws, area));
+    const real = path.join(parent, id);
+    const stat = fs.lstatSync(real);
+    if (!stat.isDirectory()) return null; // a symlink lstats as a symlink, not as a directory
+    if (!isInside(root, real)) return null;
+    if (path.basename(real) !== id) return null;
+    if (path.basename(path.dirname(real)) !== area) return null;
+    if (path.basename(path.dirname(path.dirname(real))) !== ws) return null;
+    if (path.dirname(path.dirname(path.dirname(real))) !== root) return null;
+    return real;
+  } catch {
+    // ENOENT, ELOOP, EACCES, a relocated workspace — all of them mean "no such run".
+    return null;
+  }
+}
+
+/**
+ * The DESTINATION half of the gate: `<realpath($AW_HOME)>/<ws>/<area>`, created if missing, proven
+ * to be a real directory at exactly that place — or `null`.
+ *
+ * The source of an archive/restore has always gone through `mutableRunDir`. The destination went
+ * through `path.join(mutableWorkspaceDir(ws), area)` and nothing else, and `rename(2)` follows
+ * symlinks in the path PREFIX, so `ln -s /somewhere/else $AW_HOME/<ws>/archive` — a link an agent
+ * with `bash` can plant, inside the store, which is the threat model `mutableRunDir` exists for —
+ * relocated the whole move. Reproduced before this fix: `POST /api/runs/archive` answered
+ * `{"ok":true,…,"movedTo":"archive"}` while the run directory landed outside `$AW_HOME`, out of
+ * both the active and the archived view, and `restore` then 404ed because the SOURCE gate did its
+ * job. A confined run left the store, permanently, and the route called it a success.
+ *
+ * So the destination is now held to the same proof as the source: `lstat` (a symlink lstats as a
+ * symlink, never as a directory) and a `realpath` that must equal the path built from the resolved
+ * store root and the two validated segments. `mkdirSync` first, because a first archive in a
+ * workspace legitimately has to create the directory — and `mkdir` on an existing symlink fails
+ * with EEXIST rather than following it, so creating it cannot itself be redirected.
+ */
+function mutableAreaDir(workspace: string, area: RunArea): string | null {
+  const ws = safeSegment(workspace);
+  if (ws === null) return null;
+  if (area !== "runs" && area !== "archive") return null;
+  try {
+    const root = fs.realpathSync(awHome());
+    const expected = path.join(root, ws, area);
+    fs.mkdirSync(expected, { recursive: true });
+    if (!fs.lstatSync(expected).isDirectory()) return null;
+    return fs.realpathSync(expected) === expected ? expected : null;
+  } catch {
+    return null;
+  }
+}
+
+export type RunMutation = "ok" | "not-found" | "exists" | "failed";
+
+/**
+ * Delete `$AW_HOME/<ws>/<area>/<runId>` and everything under it.
+ *
+ * `recursive: true` — but `fs.rmSync` never follows symlinks, it unlinks them, so a link an agent
+ * planted inside `artifacts/` costs the link and not its target. The directory itself has already
+ * been proven not to be a link by `mutableRunDir`.
+ */
+export function deleteRun(workspace: string, runId: string, area: RunArea = "runs"): RunMutation {
+  const dir = mutableRunDir(workspace, runId, area);
+  if (dir === null) return "not-found";
+  try {
+    fs.rmSync(dir, { recursive: true, force: false });
+    return "ok";
+  } catch {
+    return "failed";
+  }
+}
+
+/**
+ * Move a run between `runs/` and `archive/` — a plain `rename`, so it is atomic, instant for a
+ * run with a 300 MB video, and impossible to half-apply.
+ *
+ * Both ends go through `mutableRunDir`/`mutableAreaDir`: the source must be exactly
+ * `<store>/<ws>/<from>/<runId>`, and the destination is built from the resolved store root and
+ * the same validated segments rather than from anything the caller sent — then re-verified with
+ * `lstat` + `realpath`, because "built from the store root" was true of the old code too and a
+ * symlinked `archive/` still redirected the `rename`. An existing destination is reported
+ * (`"exists"`), never overwritten — `rename` would replace a directory silently.
+ */
+export function moveRun(
+  workspace: string,
+  runId: string,
+  from: RunArea,
+  to: RunArea,
+): RunMutation {
+  const source = mutableRunDir(workspace, runId, from);
+  if (source === null) return "not-found";
+  const id = safeSegment(runId);
+  if (id === null) return "not-found";
+  // Both ends, same proof. `mutableAreaDir` creates the directory and then re-verifies that what
+  // it created is a real directory at exactly `<store>/<ws>/<to>` — see its doc comment for the
+  // symlinked-`archive/` escape this closes.
+  const targetDir = mutableAreaDir(workspace, to);
+  if (targetDir === null) return "not-found";
+  const target = path.join(targetDir, id);
+  try {
+    // `lstatSync` rather than `existsSync`: a DANGLING symlink at the destination name does not
+    // "exist" by `existsSync` but would be silently replaced by `rename`.
+    try {
+      fs.lstatSync(target);
+      return "exists";
+    } catch {
+      /* nothing there — the normal case */
+    }
+    fs.renameSync(source, target);
+    return "ok";
+  } catch {
+    return "failed";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// the workspace registry, write side (T21 step 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Written through a temp file + `rename`, like the toolkit's store: no reader sees half a file.
+ *
+ * Atomicity matters for `aw.config.json` too, not just for `$AW_HOME/workspaces.json`: the CLI
+ * re-reads that file mid-run, and a half-written config is a failed run. The cost is that a crash
+ * between `write` and `rename` leaves residue in a directory that is under git, so the temp name
+ * is dot-prefixed (`.aw.config.json.tmp-<pid>`) — hidden from a casual `ls`, still visible to
+ * `git status` if it ever happens, and unlinked on any failure path. Recorded in T21 § Deviations.
+ */
+function writeAtomic(file: string, text: string): void {
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.tmp-${process.pid}`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  try {
+    fs.writeFileSync(tmp, text, "utf8");
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* it was never created */
+    }
+    throw err;
+  }
+}
+
+export type RegistryResult =
+  | { ok: true }
+  | { ok: false; reason: "exists" | "missing" | "corrupt" | "failed"; message: string };
+
+/**
+ * Read `workspaces.json` for a WRITE.
+ *
+ * Deliberately not `listWorkspaces()`, which answers `[]` for a corrupt file: `[]` is a fine
+ * thing to render, and a catastrophic thing to write back — it would erase every other
+ * registration. A file we cannot parse is reported instead, and the caller refuses the write.
+ */
+function readRegistryForWrite():
+  | { ok: true; workspaces: Workspace[] }
+  | { ok: false; message: string } {
+  const file = path.join(awHome(), "workspaces.json");
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    // No registry yet is normal — the first registration creates it.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { ok: true, workspaces: [] };
+    return { ok: false, message: "workspaces.json could not be read" };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text) as unknown;
+  } catch {
+    return { ok: false, message: "workspaces.json is not valid JSON — fix it by hand first" };
+  }
+  const parsed = WorkspacesFile.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, message: "workspaces.json is not a valid workspaces file — fix it by hand first" };
+  }
+  return { ok: true, workspaces: parsed.data.workspaces };
+}
+
+/** Add one entry to `workspaces.json`. Never replaces an existing name. */
+export function addWorkspace(entry: Workspace): RegistryResult {
+  const registry = readRegistryForWrite();
+  if (!registry.ok) return { ok: false, reason: "corrupt", message: registry.message };
+  if (registry.workspaces.some((w) => w.name === entry.name)) {
+    return { ok: false, reason: "exists", message: `workspace "${entry.name}" is already registered` };
+  }
+  const next = { workspaces: [...registry.workspaces, entry] };
+  try {
+    writeAtomic(path.join(awHome(), "workspaces.json"), `${JSON.stringify(next, null, 2)}\n`);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "failed", message: "workspaces.json could not be written" };
+  }
+}
+
+/**
+ * Remove one entry from `workspaces.json` and NOTHING else.
+ *
+ * No repo file is touched and no run directory is touched — that is the promise the confirm
+ * dialog makes (T21 step 2), and the reason this function has no other filesystem call in it.
+ */
+export function removeWorkspace(name: string): RegistryResult {
+  const registry = readRegistryForWrite();
+  if (!registry.ok) return { ok: false, reason: "corrupt", message: registry.message };
+  const next = registry.workspaces.filter((w) => w.name !== name);
+  if (next.length === registry.workspaces.length) {
+    return { ok: false, reason: "missing", message: `workspace "${name}" is not registered` };
+  }
+  try {
+    writeAtomic(path.join(awHome(), "workspaces.json"), `${JSON.stringify({ workspaces: next }, null, 2)}\n`);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "failed", message: "workspaces.json could not be written" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// aw.config.json (T21 step 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a workspace's config lives: `<repoRoot>/aw.config.json`, with `repoRoot` taken from the
+ * REGISTRY — never from the caller.
+ *
+ * This is the whole containment story for `/api/config`. The request names a workspace; the
+ * workspace is looked up in `$AW_HOME/workspaces.json`; the only path that is ever opened is the
+ * one that lookup produced, joined with a constant file name. A caller cannot express a path at
+ * all, so there is nothing to traverse out of. (`repoRoot` itself is trusted for the same reason
+ * `aw init` trusts it: it is a local file the developer owns, and the CLI already runs commands
+ * in that directory.)
+ */
+export function configPathFor(workspace: string): string | null {
+  const name = safeSegment(workspace);
+  if (name === null) return null;
+  const entry = listWorkspaces().find((w) => w.name === name);
+  if (entry === undefined) return null;
+  if (!path.isAbsolute(entry.repoRoot)) return null;
+  return path.join(entry.repoRoot, "aw.config.json");
+}
+
+export type ConfigRead =
+  | { ok: true; path: string; text: string; data: Record<string, unknown> }
+  | { ok: false; path: string | null; message: string };
+
+/** Read a workspace's `aw.config.json` as RAW JSON (not zod-parsed — the caller decides). */
+export function readConfigFile(workspace: string): ConfigRead {
+  const file = configPathFor(workspace);
+  if (file === null) {
+    return { ok: false, path: null, message: `workspace "${workspace}" is not registered` };
+  }
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return {
+      ok: false,
+      path: file,
+      message:
+        code === "ENOENT"
+          ? "aw.config.json does not exist in this repo — run `npx tsx src/cli.ts init` there"
+          : "aw.config.json could not be read",
+    };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text) as unknown;
+  } catch (err) {
+    return { ok: false, path: file, message: `aw.config.json is not valid JSON: ${(err as Error).message}` };
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { ok: false, path: file, message: "aw.config.json is not a JSON object" };
+  }
+  return { ok: true, path: file, text, data: raw as Record<string, unknown> };
+}
+
+/** Write `aw.config.json` atomically (temp file + `rename` in the same directory). */
+export function writeConfigFile(file: string, text: string): boolean {
+  try {
+    writeAtomic(file, text);
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -38,6 +38,11 @@ export function SiteHeader() {
               </Link>
             ))
           )}
+          {/* T21: the settings page is the only route with no link from anywhere else, and a
+              local tool whose configuration is reachable only by typing a URL is not configurable. */}
+          <Link href="/settings" className="text-muted hover:text-link hover:underline">
+            settings
+          </Link>
         </nav>
       </div>
     </header>

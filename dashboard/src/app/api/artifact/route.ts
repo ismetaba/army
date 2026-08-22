@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { Readable } from "node:stream";
+import { guardHost } from "@/lib/api-guard";
 import { resolveArtifact } from "@/lib/store";
 
 /**
@@ -22,6 +23,10 @@ import { resolveArtifact } from "@/lib/store";
  * Content types come from a small allow-list; `.html`/`.svg` are deliberately not on it and fall
  * back to `application/octet-stream`, so an agent-written artifact cannot execute script on the
  * panel's origin. `X-Content-Type-Options: nosniff` stops the browser from overruling that.
+ *
+ * Being read-only does not exempt it from `guardHost`. What it reads out is a repo diff, a report
+ * and design screenshots — private data by SPEC's preamble — and to a DNS-rebound page the panel
+ * IS the same origin, so CORS would not withhold the body. The `Host` header must name loopback.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,6 +71,9 @@ function notFound(): Response {
 
 export async function GET(request: Request): Promise<Response> {
   try {
+    const host = guardHost(request);
+    if (host !== null) return host;
+
     const params = new URL(request.url).searchParams;
     const ws = params.get("ws");
     const run = params.get("run");
