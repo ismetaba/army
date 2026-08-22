@@ -326,6 +326,82 @@ describe('bash guardrails', () => {
   });
 });
 
+describe('bash timeout kills the whole process group', () => {
+  const tools = () => makeCoreTools('designer', repoRoot);
+
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  /** Signal 0 only probes for existence — it delivers nothing. */
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /** The backgrounded child records its own pid; wait for the file to appear, then read it. */
+  async function readPidFile(file: string): Promise<number> {
+    for (let i = 0; i < 50; i++) {
+      const raw = (await fs.promises.readFile(file, 'utf8').catch(() => '')).trim();
+      if (/^\d+$/.test(raw)) return Number(raw);
+      await sleep(100);
+    }
+    throw new Error(`background child never wrote its pid to ${file}`);
+  }
+
+  async function expectReaped(pid: number): Promise<void> {
+    // Signalling the group is asynchronous, and a killed child lingers as a zombie until
+    // its reparented-to-init parent reaps it.
+    for (let i = 0; i < 50 && alive(pid); i++) await sleep(100);
+    expect(alive(pid)).toBe(false);
+  }
+
+  it('leaves no orphan when a backgrounded grandchild outlives the timeout', async () => {
+    const pidFile = path.join(repoRoot, 'test-reports', 'tmp', 'orphan.pid');
+    await fs.promises.rm(pidFile, { force: true });
+    // The shape that leaked port 3001: the outer shell backgrounds a long-lived process and
+    // then blocks, so the timeout fires with a live grandchild that killing only the direct
+    // child (what `exec()` did) never reaches.
+    const command = `sh -c 'echo $$ > "${pidFile}"; exec sleep 45' & sleep 45`;
+
+    const res = await call(tools(), 'bash', { command, timeoutMs: 1000 });
+    expect(res.error).toBeUndefined();
+    expect(res.timedOut).toBe(true);
+    expect(res.exitCode).toBeNull();
+    expect(res.command).toBe(command);
+    expect(typeof res.stdout).toBe('string');
+    expect(typeof res.stderr).toBe('string');
+
+    await expectReaped(await readPidFile(pidFile));
+  }, 30_000);
+
+  it('escalates to SIGKILL when the group ignores SIGTERM', async () => {
+    const pidFile = path.join(repoRoot, 'test-reports', 'tmp', 'stubborn.pid');
+    await fs.promises.rm(pidFile, { force: true });
+    // `trap "" TERM` is what an npm wrapper effectively does to the polite signal, so only
+    // the SIGKILL escalation can free this one.
+    const command =
+      `sh -c 'trap "" TERM; echo $$ > "${pidFile}"; while :; do sleep 1; done' & sleep 45`;
+
+    const res = await call(tools(), 'bash', { command, timeoutMs: 1000 });
+    expect(res.error).toBeUndefined();
+    expect(res.timedOut).toBe(true);
+    expect(res.exitCode).toBeNull();
+
+    await expectReaped(await readPidFile(pidFile));
+  }, 30_000);
+
+  it('a command that finishes in time is unaffected', async () => {
+    const res = await call(tools(), 'bash', { command: 'echo quick', timeoutMs: 5000 });
+    expect(res.error).toBeUndefined();
+    expect(res.exitCode).toBe(0);
+    expect(res.timedOut).toBeUndefined();
+    expect(res.stdout).toContain('quick');
+  });
+});
+
 describe('grep / glob / git', () => {
   const tools = () => makeCoreTools('reviewer', repoRoot);
 

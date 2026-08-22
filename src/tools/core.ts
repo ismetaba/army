@@ -1,11 +1,10 @@
-import { exec as execCb, execFile as execFileCb } from 'node:child_process';
+import { execFile as execFileCb, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
-const execAsync = promisify(execCb);
 const execFileAsync = promisify(execFileCb);
 
 /** Permission profile — SPEC § "Tools and permission profiles". */
@@ -22,6 +21,10 @@ const EXEC_MAX_BUFFER = 16 * 1024 * 1024;
 
 const DEFAULT_BASH_TIMEOUT_MS = 120_000;
 const MAX_BASH_TIMEOUT_MS = 600_000;
+/** After the timeout's SIGTERM, how long the process group gets before SIGKILL. */
+const BASH_KILL_GRACE_MS = 2_000;
+/** After the SIGKILL, how long we still wait for the pipes to close before reporting anyway. */
+const BASH_CLOSE_GRACE_MS = 500;
 const HTTP_TIMEOUT_MS = 30_000;
 
 /** The only subtree the `tester` profile may write to (SPEC tools table). */
@@ -215,6 +218,141 @@ export function blockedBashPattern(command: string): RegExp | null {
 function capPair(stdout: string, stderr: string): { stdout: string; stderr: string } {
   const out = truncate(stdout);
   return { stdout: out, stderr: truncate(stderr, Math.max(0, MAX_OUTPUT - out.length)) };
+}
+
+/**
+ * Process groups of bash children that are still running, plus the one `exit` hook that
+ * reaps them. A detached child does *not* die with the CLI (and, unlike the old in-group
+ * child, no longer receives the terminal's Ctrl-C either), so a `process.exit()` mid-command
+ * would leak exactly the orphan this whole file is trying to avoid. One shared listener
+ * rather than one per call: concurrent tool calls would otherwise trip the max-listeners
+ * warning at ten.
+ */
+const liveBashGroups = new Set<number>();
+let bashExitHookInstalled = false;
+
+/** Kill a whole process group; a negative pid is the group (see `detached` below). */
+function signalBashGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // ESRCH: the group is already gone. Nothing else can be done from here.
+  }
+}
+
+function trackBashGroup(pid: number): () => void {
+  liveBashGroups.add(pid);
+  if (!bashExitHookInstalled) {
+    bashExitHookInstalled = true;
+    // Nothing can be awaited in an `exit` handler, so there is no chance to escalate from a
+    // polite SIGTERM: send the signal that is guaranteed to free the port.
+    process.on('exit', () => {
+      for (const groupPid of liveBashGroups) signalBashGroup(groupPid, 'SIGKILL');
+      liveBashGroups.clear();
+    });
+  }
+  return () => liveBashGroups.delete(pid);
+}
+
+interface ShellRun {
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  timedOut: boolean;
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * Run `command` through a shell in `cwd`, as its own process group.
+ *
+ * This used to be `exec()`, which leaves the child in the CLI's own process group and, on
+ * timeout, signals only the shell it spawned. `npm run dev:api` is a shell that spawns npm
+ * that spawns node, so the server survived as an orphan still holding port 3001 and broke
+ * every later run — and a group-wide signal from the doomed npm wrapper could reach the CLI
+ * itself (one `aw test-feature` exited 143 right after such a timeout).
+ *
+ * The fix is the one `ensureUp()` in src/util.ts already uses: `detached: true` makes the
+ * child a process-group leader, so `kill(-pid)` reaches every descendant.
+ *
+ * Resolves for any exit, including a non-zero one — that is a result the agent must see.
+ * Only a spawn failure (bad cwd, no shell) rejects.
+ */
+function runShell(
+  command: string,
+  opts: { cwd: string; timeoutMs: number; maxChars: number },
+): Promise<ShellRun> {
+  return new Promise<ShellRun>((resolve, reject) => {
+    const child = spawn(command, {
+      cwd: opts.cwd,
+      shell: true,
+      detached: true,
+      // stdin is /dev/null, so a command that reads it gets EOF instead of hanging forever.
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+
+    const out = { stdout: '', stderr: '' };
+    const timers: NodeJS.Timeout[] = [];
+    let timedOut = false;
+    let settled = false;
+    let untrack: (() => void) | undefined;
+
+    const pid = child.pid;
+    const signalGroup = (signal: NodeJS.Signals): void => {
+      if (pid !== undefined) signalBashGroup(pid, signal);
+    };
+    if (pid !== undefined) untrack = trackBashGroup(pid);
+
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      for (const timer of timers) clearTimeout(timer);
+      untrack?.();
+      fn();
+    };
+    const after = (ms: number, fn: () => void): void => {
+      timers.push(setTimeout(fn, ms));
+    };
+
+    const collect = (stream: NodeJS.ReadableStream | null, key: 'stdout' | 'stderr'): void => {
+      if (!stream) return;
+      stream.setEncoding('utf8');
+      stream.on('data', (chunk: string) => {
+        // Everything is truncated to MAX_OUTPUT before the agent sees it, so past the cap
+        // there is nothing to gain from buffering more — just keep draining the pipe.
+        const room = opts.maxChars - out[key].length;
+        if (room > 0) out[key] += chunk.length > room ? chunk.slice(0, room) : chunk;
+      });
+      // A pipe torn down under us must not become an unhandled 'error'.
+      stream.on('error', () => {});
+    };
+    collect(child.stdout, 'stdout');
+    collect(child.stderr, 'stderr');
+
+    child.once('error', (err) => settle(() => reject(err)));
+    // 'close', not 'exit': the output pipes are only complete once every descendant holding
+    // them has let go, which is the same point `exec()` reported at.
+    child.once('close', (code, signal) => {
+      settle(() => resolve({ exitCode: code, signal, timedOut, ...out }));
+    });
+
+    after(opts.timeoutMs, () => {
+      timedOut = true;
+      signalGroup('SIGTERM');
+      // SIGTERM ignored, or swallowed by an npm wrapper: take the port back by force.
+      after(BASH_KILL_GRACE_MS, () => signalGroup('SIGKILL'));
+      // A descendant that escaped the group (it called setsid itself) can hold the pipes
+      // open indefinitely. Stop waiting for 'close' and report what was collected.
+      after(BASH_KILL_GRACE_MS + BASH_CLOSE_GRACE_MS, () =>
+        settle(() => {
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          child.unref();
+          resolve({ exitCode: null, signal: 'SIGKILL', timedOut: true, ...out });
+        }),
+      );
+    });
+  });
 }
 
 /** SPEC: localhost/127.0.0.1 are exempt from the destructive-method guard. */
@@ -461,25 +599,22 @@ export function makeCoreTools(
           const blocked = blockedBashPattern(command);
           if (blocked) throw new ToolError(`blocked by guardrails: ${String(blocked)}`);
           const timeout = Math.min(timeoutMs ?? DEFAULT_BASH_TIMEOUT_MS, MAX_BASH_TIMEOUT_MS);
+          let run: ShellRun;
           try {
-            const { stdout, stderr } = await execAsync(command, {
+            run = await runShell(command, {
               cwd: root,
-              timeout,
-              maxBuffer: EXEC_MAX_BUFFER,
+              timeoutMs: timeout,
+              maxChars: EXEC_MAX_BUFFER,
             });
-            return { command, exitCode: 0, ...capPair(String(stdout), String(stderr)) };
           } catch (err) {
-            const failure = asExecFailure(err);
-            // A non-zero exit is a result the agent must see, not a tool error.
-            const capped = capPair(String(failure.stdout ?? ''), String(failure.stderr ?? ''));
-            if (failure.killed) {
-              return { command, exitCode: null, timedOut: true, ...capped };
-            }
-            if (typeof failure.code === 'number') {
-              return { command, exitCode: failure.code, ...capped };
-            }
-            throw new ToolError(`bash failed: ${messageOf(failure)}`);
+            // Only a spawn failure reaches here; every exit is a resolve.
+            throw new ToolError(`bash failed: ${messageOf(err)}`);
           }
+          // A non-zero exit is a result the agent must see, not a tool error.
+          const capped = capPair(run.stdout, run.stderr);
+          if (run.timedOut) return { command, exitCode: null, timedOut: true, ...capped };
+          if (run.exitCode !== null) return { command, exitCode: run.exitCode, ...capped };
+          throw new ToolError(`bash failed: terminated by signal ${run.signal ?? 'unknown'}`);
         }),
     }),
 
