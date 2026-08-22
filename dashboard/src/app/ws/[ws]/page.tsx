@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { listRuns, listWorkspaces, workspaceExists } from "@/lib/store";
+import { RUN_KINDS, listRuns, listWorkspaces, workspaceExists } from "@/lib/store";
 import type { RunKind } from "@/lib/store";
 import { RunTable } from "@/components/run-table";
 
 export const dynamic = "force-dynamic";
 
-const KINDS = ["review", "test-feature", "design-loop"] as const satisfies readonly RunKind[];
+/** Taken from the zod enum, so a new run kind gets its filter pill without an edit here. */
+const KINDS = RUN_KINDS;
+
+/**
+ * How many runs the table shows before it stops. A workspace accumulates runs forever and the
+ * page is uncached, so an unbounded table would grow into a multi-megabyte render on every
+ * reload. `?limit=all` is the escape hatch when you really do want the whole list.
+ */
+const PAGE_LIMIT = 100;
 
 /** `?kind=` — anything not in the enum is treated as "no filter" rather than an error page. */
 function parseKind(value: string | string[] | undefined): RunKind | null {
@@ -16,7 +24,10 @@ function parseKind(value: string | string[] | undefined): RunKind | null {
 
 export default async function WorkspacePage({ params, searchParams }: PageProps<"/ws/[ws]">) {
   const { ws } = await params;
-  const kind = parseKind((await searchParams).kind);
+  const query = await searchParams;
+  const kind = parseKind(query.kind);
+  const limitParam = Array.isArray(query.limit) ? query.limit[0] : query.limit;
+  const showAll = limitParam === "all";
 
   // `workspaceExists` covers both halves of "real": in workspaces.json, or has a runs directory.
   // A name that is neither — including a name that is not a legal directory segment — is a 404,
@@ -25,7 +36,8 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
 
   const entry = listWorkspaces().find((w) => w.name === ws);
   const all = listRuns(ws);
-  const runs = kind === null ? all : all.filter((r) => r.kind === kind);
+  const matching = kind === null ? all : all.filter((r) => r.kind === kind);
+  const runs = showAll ? matching : matching.slice(0, PAGE_LIMIT);
   const counts = new Map<RunKind, number>(KINDS.map((k) => [k, all.filter((r) => r.kind === k).length]));
 
   return (
@@ -55,6 +67,18 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
         runs={runs}
         empty={kind === null ? "No runs in this workspace yet." : `No ${kind} runs in this workspace.`}
       />
+
+      {runs.length < matching.length ? (
+        <p className="text-xs text-muted">
+          showing the newest {runs.length} of {matching.length} —{" "}
+          <Link
+            href={`/ws/${encodeURIComponent(ws)}?${kind === null ? "" : `kind=${kind}&`}limit=all`}
+            className="text-link hover:underline"
+          >
+            show all
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }

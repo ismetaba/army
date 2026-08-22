@@ -10,7 +10,10 @@ import { listWorkspaceSummaries } from "@/lib/store";
  * underline — each page states which workspace it is showing in its own heading.
  */
 export function SiteHeader() {
-  const workspaces = listWorkspaceSummaries();
+  // Only workspaces that HAVE a page: a registry name that is not a legal directory segment
+  // cannot be one, and a switcher entry that 404s is worse than no entry. Home still shows it,
+  // unlinked and with the reason.
+  const workspaces = listWorkspaceSummaries().filter((w) => w.usable);
 
   return (
     <header className="border-b border-line bg-surface">

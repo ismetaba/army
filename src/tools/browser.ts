@@ -2,7 +2,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type BrowserContextOptions,
+  type Page,
+} from 'playwright';
 import type { AwConfig } from '../../shared/schemas';
 import { slugify } from '../util';
 import { write } from '../workflows/common';
@@ -20,6 +26,31 @@ export interface BrowserToolsOptions {
   viewports: Viewports;
   /** Where warnings go; stderr by default, so stdout stays parseable. */
   log?: (message: string) => void;
+  /**
+   * T15 `--video`: record every context Playwright opens and drop the finished `.webm` in `dir`
+   * (the design loop points it at the run's screenshot directory, so the video lands beside the
+   * screenshots it belongs to).
+   *
+   * Absent — the default, and what every caller without `--video` passes — is byte-for-byte the
+   * pre-T15 behaviour: `recordVideo` never reaches `newContext`, so Chromium starts no screencast,
+   * writes no file and creates no directory.
+   */
+  video?: VideoOptions;
+}
+
+export interface VideoOptions {
+  /** Where Playwright writes its raw recording, and where the renamed file ends up. */
+  dir: string;
+}
+
+/** One finished recording, after `closeBrowser` gave it its deterministic name. */
+export interface RecordedVideo {
+  viewport: BrowserViewport;
+  /** Absolute path of the renamed file. */
+  path: string;
+  bytes: number;
+  /** True for the run's video — the one a manifest records as `design.video`. */
+  primary: boolean;
 }
 
 /** Every tool returns this instead of throwing (SPEC: tools never throw). */
@@ -46,6 +77,8 @@ interface Session {
   page: Page;
   /** `error`-level console messages + pageerrors collected since the last read. */
   errors: string[];
+  /** Set only when this context is recording; where its finished `.webm` is renamed to. */
+  videoDir?: string;
 }
 
 let browserPromise: Promise<Browser> | null = null;
@@ -70,15 +103,40 @@ function push(session: Session, message: string): void {
   session.errors.push(truncate(message));
 }
 
-async function createSession(name: BrowserViewport, viewports: Viewports): Promise<Session> {
-  const browser = await getBrowser();
+/**
+ * The exact options one viewport's context is created with.
+ *
+ * Split out and exported so the "`--video` changes nothing when it is off" claim is testable:
+ * without `video` the object has the two keys it has always had, and `recordVideo` is not merely
+ * `undefined` but absent.
+ *
+ * `size` is pinned to the viewport rather than left to Playwright, which otherwise scales the
+ * recording down to fit 800×800 — a 1440-wide desktop video that no longer matches the 1440-wide
+ * screenshots beside it is a poor piece of evidence.
+ */
+export function contextOptions(
+  viewports: Viewports,
+  name: BrowserViewport,
+  video?: VideoOptions,
+): BrowserContextOptions {
   const { width, height } = viewports[name];
   // deviceScaleFactor 1 keeps PNG pixel width identical to the CSS viewport width.
-  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+  const options: BrowserContextOptions = { viewport: { width, height }, deviceScaleFactor: 1 };
+  if (video) options.recordVideo = { dir: video.dir, size: { width, height } };
+  return options;
+}
+
+async function createSession(
+  name: BrowserViewport,
+  viewports: Viewports,
+  video?: VideoOptions,
+): Promise<Session> {
+  const browser = await getBrowser();
+  const context = await browser.newContext(contextOptions(viewports, name, video));
   context.setDefaultTimeout(ACTION_TIMEOUT_MS);
   context.setDefaultNavigationTimeout(NAV_TIMEOUT_MS);
   const page = await context.newPage();
-  const session: Session = { context, page, errors: [] };
+  const session: Session = { context, page, errors: [], videoDir: video?.dir };
   page.on('console', (msg) => {
     if (msg.type() === 'error') push(session, `[console] ${msg.text()}`);
   });

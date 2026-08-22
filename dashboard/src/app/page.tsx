@@ -33,27 +33,47 @@ export default async function HomePage() {
           <EmptyStore />
         ) : (
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {workspaces.map((w) => (
-              <li key={w.name} className="min-w-0">
-                <Link
-                  href={`/ws/${encodeURIComponent(w.name)}`}
-                  className="flex h-full flex-col gap-2 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-link"
-                >
+            {workspaces.map((w) => {
+              const body = (
+                <>
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="truncate font-medium text-fg">{w.name}</span>
                     <span className="shrink-0 text-xs text-muted">
-                      {w.runCount} {w.runCount === 1 ? "run" : "runs"}
+                      {w.usable ? `${w.runCount} ${w.runCount === 1 ? "run" : "runs"}` : "unusable"}
                     </span>
                   </div>
                   <p className="font-mono text-xs break-all text-muted">
                     {w.repoRoot ?? "not in workspaces.json"}
                   </p>
                   <p className="mt-auto text-xs text-muted">
-                    {w.lastRunAt ? `last run ${formatAgo(w.lastRunAt)}` : "no runs yet"}
+                    {w.usable
+                      ? w.lastRunAt
+                        ? `last run ${formatAgo(w.lastRunAt)}`
+                        : "no runs yet"
+                      : "name is not a valid directory segment — the CLI cannot use this workspace"}
                   </p>
-                </Link>
-              </li>
-            ))}
+                </>
+              );
+              return (
+                <li key={w.name} className="min-w-0">
+                  {/* A workspace whose name cannot be a directory has no page. It is still shown
+                      — it IS in workspaces.json — but as plain text, because a link to it would
+                      only ever 404 and send the reader hunting for a deleted workspace. */}
+                  {w.usable ? (
+                    <Link
+                      href={`/ws/${encodeURIComponent(w.name)}`}
+                      className="flex h-full flex-col gap-2 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-link"
+                    >
+                      {body}
+                    </Link>
+                  ) : (
+                    <div className="flex h-full flex-col gap-2 rounded-lg border border-dashed border-line bg-surface p-4 opacity-70">
+                      {body}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

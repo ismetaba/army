@@ -242,3 +242,22 @@ the permission profile. Log every tool call and result (truncated to 2 KB) to st
 after T16, to the run's `log.txt`. Known limitation: provider `claude-cli` does not execute
 AI SDK tools — workflows must refuse `claude-cli` with a clear error pointing to
 `anthropic` or the Claude Code native path (`.claude/` commands).
+
+## Dashboard security invariants (architect, 2026-08-22)
+
+The panel serves private data — repo diffs, run logs, and reports. A run's `log.txt` mirrors tool
+calls, so it can contain request bodies built from the configured test account. Therefore:
+
+1. **Loopback only.** Dev and start scripts bind `127.0.0.1` explicitly. Never `0.0.0.0`, never a
+   LAN address, no "just for a demo" exception. (Found in T17 verification: the default Next bind
+   exposed every run's `log.txt` to anyone on the same network.)
+2. **Path confinement everywhere.** Any route that resolves a caller-supplied path must reject
+   absolute paths, `..` segments (raw, URL-encoded and double-encoded) and symlinks that escape
+   the run directory. Answer 404 — never a 500 with a stack, never an error naming a real path.
+3. **Run content is untrusted data.** Findings, case bodies, logs and screenshots derive from a
+   model reading an arbitrary repo. Render them as text; never as HTML, never as a URL the page
+   will fetch, and never as something a shell will interpret.
+4. **Mutating routes take an argv array, never a shell string** (T22), and accept only a
+   per-kind allowlist of arguments.
+5. **No secrets in the store.** Config writes must never persist a password or API key — only the
+   env var NAME (`passEnv`). Keys stay in the shell environment or `.env`.

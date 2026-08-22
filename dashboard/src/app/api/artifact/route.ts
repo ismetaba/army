@@ -26,6 +26,33 @@ import { resolveArtifact } from "@/lib/store";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * A single `bytes=start-end` range, clamped to the file, or `null` for "send the whole thing".
+ *
+ * Only the one-range form is honoured — that is what a `<video>` element sends when it seeks,
+ * and multi-range replies need multipart bodies for no benefit here. Anything unparseable or
+ * unsatisfiable falls back to the full 200 response rather than erroring.
+ */
+function parseRange(header: string | null, size: number): { start: number; end: number } | null {
+  if (header === null || size === 0) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (m === null) return null;
+  const [, rawStart, rawEnd] = m;
+  let start: number;
+  let end: number;
+  if (rawStart === "") {
+    if (rawEnd === "") return null;
+    // `bytes=-500`: the last 500 bytes.
+    start = Math.max(0, size - Number(rawEnd));
+    end = size - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd === "" ? size - 1 : Math.min(Number(rawEnd), size - 1);
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) return null;
+  return { start, end };
+}
+
 function notFound(): Response {
   return new Response("404 — no such artifact\n", {
     status: 404,
@@ -49,16 +76,26 @@ export async function GET(request: Request): Promise<Response> {
     if (artifact === null) return notFound();
 
     // Streamed rather than buffered: design-loop videos and screenshots are the big artifacts,
-    // and the panel should not hold one in memory to hand it to a <video> tag.
+    // and the panel should not hold one in memory to hand it to a <video> tag. That same tag
+    // needs byte ranges to seek, so a single `bytes=` range is answered with a 206 over a
+    // positioned stream; `accept-ranges` on the 200 is what tells the player it may ask.
+    const range = parseRange(request.headers.get("range"), artifact.size);
     const stream = Readable.toWeb(
-      fs.createReadStream(artifact.absPath),
+      fs.createReadStream(
+        artifact.absPath,
+        range === null ? undefined : { start: range.start, end: range.end },
+      ),
     ) as unknown as ReadableStream<Uint8Array>;
 
     return new Response(stream, {
-      status: 200,
+      status: range === null ? 200 : 206,
       headers: {
         "content-type": artifact.contentType,
-        "content-length": String(artifact.size),
+        "content-length": String(range === null ? artifact.size : range.end - range.start + 1),
+        "accept-ranges": "bytes",
+        ...(range === null
+          ? {}
+          : { "content-range": `bytes ${range.start}-${range.end}/${artifact.size}` }),
         // `inline` so images and markdown open in the tab; the filename is the artifact's own
         // basename, quoted, and it came from a path we already resolved inside the run directory.
         "content-disposition": `inline; filename="${artifact.fileName.replace(/["\\]/g, "_")}"`,
