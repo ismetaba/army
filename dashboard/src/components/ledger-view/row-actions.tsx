@@ -13,8 +13,9 @@
  * Deleting is not undoable, so it asks first — and says what it will take with it.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 type Action = "archive" | "delete" | "restore";
 
@@ -120,6 +121,14 @@ export function RowActions({
   );
 }
 
+/**
+ * Deleting is not undoable, so it asks first — through the panel's ONE confirmation surface.
+ *
+ * This used to be a third hand-rolled modal. It only differed from `ConfirmDialog` in its dress
+ * and in what it forgot: `aria-modal="true"` with no Tab containment, on a screen where every row
+ * behind the overlay carries its own DEL button, so three Tabs landed on a DIFFERENT run's delete
+ * control and Enter there opened a confirmation for the wrong run.
+ */
 function ConfirmDelete({
   ws,
   runId,
@@ -135,81 +144,30 @@ function ConfirmDelete({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const sheet = useRef<HTMLDivElement>(null);
-  const opener = useRef<Element | null>(null);
-
-  useEffect(() => {
-    opener.current = document.activeElement;
-    sheet.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      const back = opener.current;
-      if (back instanceof HTMLElement) back.focus();
-    };
-  }, [onCancel]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/80 p-4 text-left"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
-      }}
+    <ConfirmDialog
+      title="Delete this run?"
+      name={runId}
+      confirmLabel="delete run"
+      busyLabel="deleting…"
+      // The destructive button must not be the one sitting under Return when the sheet opens.
+      initialFocus="cancel"
+      danger
+      busy={busy}
+      error={error}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
     >
-      <div
-        ref={sheet}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Delete run ${runId}`}
-        data-confirm-delete={runId}
-        className="shadow-slip-center flex w-[460px] max-w-full flex-col border border-rule-2 bg-surface"
-      >
-        <div className="border-b-2 border-fg px-6 py-4">
-          <h2 className="text-[17px] font-medium tracking-[-0.02em]">Delete this run?</h2>
-        </div>
-        <div className="flex flex-col gap-3 px-6 py-5">
-          <p className="mono text-[10.5px] tracking-[-0.04em] break-all">{runId}</p>
-          <p className="text-[13px] leading-[1.55] text-ink-2">
-            This permanently removes the run directory in <span className="mono text-[11px]">{ws}</span> — its
-            manifest, its log and every artifact. Nothing else is touched: the repo, its history and
-            every other run stay exactly as they are.
-          </p>
-          <p className="text-[13px] leading-[1.55] text-ink-2">
-            <span className="font-medium text-fg">This cannot be undone.</span> Archive instead if
-            you only want it out of the way.
-          </p>
-          {error !== null ? (
-            <p className="border-l-2 border-danger bg-danger-tint px-3 py-2 text-[11px] text-danger">
-              {error}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex items-center justify-end gap-5 border-t border-line px-6 py-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="btnlabel flex min-h-11 items-center px-1 text-ink-3 transition-colors duration-[180ms] hover:text-fg disabled:opacity-40 min-[900px]:min-h-0"
-          >
-            cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            data-confirm-delete-go
-            className="btnlabel min-h-11 border border-danger px-4 py-2.5 text-danger transition-colors duration-[180ms] hover:bg-danger hover:text-bg disabled:opacity-40 min-[900px]:min-h-0"
-          >
-            {busy ? "deleting…" : "delete run"}
-          </button>
-        </div>
-      </div>
-    </div>
+      <p className="mono text-[10.5px] tracking-[-0.04em] break-all text-fg">{runId}</p>
+      <p>
+        This permanently removes the run directory in <span className="mono text-[11px]">{ws}</span>{" "}
+        — its manifest, its log and every artifact. Nothing else is touched: the repo, its history
+        and every other run stay exactly as they are.
+      </p>
+      <p>
+        <span className="font-medium text-fg">This cannot be undone.</span> Archive instead if you
+        only want it out of the way.
+      </p>
+    </ConfirmDialog>
   );
 }

@@ -1,6 +1,7 @@
 import { EntryTopBar } from "@/components/ledger/chrome";
 import { AddWorkspace } from "@/components/entry/add-workspace";
 import { ContentsRow, ContentsRule, type EntryRow } from "@/components/entry/contents";
+import { EntryPoller } from "@/components/entry/entry-poller";
 import { PROVIDER_IDS } from "@/lib/config-patch";
 import { listRuns, listWorkspaceSummaries } from "@/lib/store";
 
@@ -51,6 +52,9 @@ export default function EntryPage() {
 
   return (
     <div className="min-h-dvh">
+      {/* Across every workspace here, so a run started in one shows up while you are looking at
+          another — and so the RUNNING chip stops counting when that run lands. */}
+      <EntryPoller />
       <EntryTopBar />
 
       {/*

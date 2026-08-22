@@ -47,6 +47,42 @@ export function LiveMargin({
   );
 }
 
+/**
+ * The workspace's ONE polite live region (handoff § Accessibility: "the running log and elapsed
+ * timer should be `aria-live="polite"` but throttled; announce the verdict once when it lands").
+ *
+ * Throttled by its CONTENT, not by a timer: the text is the elapsed time rounded to whole minutes,
+ * so the region's text — and therefore the DOM — changes once a minute however often the clock
+ * behind it ticks. An `aria-live` on the visible 30px clock was one announcement per second for the
+ * whole life of the run; a reader could not hear anything else while a task was going.
+ *
+ * Rendered by the PAGE, once, outside both the 1440 margin and the 375 card. A live region only
+ * announces a change to text that was already there, so it has to outlive the branch it describes:
+ * mounted once, its first content (a run that landed hours ago) is silent and the switch from
+ * `running` to the verdict is the single announcement that lands.
+ */
+export function LiveAnnounce({ lastFiled }: { lastFiled: LedgerRow | null }) {
+  const { run, elapsed } = useLiveRun();
+
+  let text = "";
+  if (run !== null) {
+    const minutes = elapsed === null ? 0 : Math.floor(elapsed / 60);
+    text =
+      minutes === 0
+        ? "Task running."
+        : `Task running — ${minutes} minute${minutes === 1 ? "" : "s"} elapsed.`;
+  } else if (lastFiled !== null) {
+    const stamp = filedStamp(lastFiled);
+    text = `Run finished${stamp === null ? "" : ` — ${stamp.text}`}. ${filedSummary(lastFiled)}`;
+  }
+
+  return (
+    <p aria-live="polite" className="sr-only">
+      {text}
+    </p>
+  );
+}
+
 export function LiveEntry({ ws, lastFiled }: { ws: string; lastFiled: LedgerRow | null }) {
   const { run, elapsed, progress } = useLiveRun();
 
@@ -57,9 +93,10 @@ export function LiveEntry({ ws, lastFiled }: { ws: string; lastFiled: LedgerRow 
         <p className="mono truncate text-[10px] leading-[1.7] tracking-[-0.04em] text-ink-2">
           {run.runId ?? `${kindMeta(run.kind).title.toLowerCase()} · pid ${run.pid}`}
         </p>
-        {/* Throttled to the second by the clock that feeds it — a per-line live region would
-            announce a scrolling log, which is exactly what handoff § Accessibility warns off. */}
-        <p aria-live="polite" className="text-[30px] font-semibold tracking-[-0.03em] tabular-nums">
+        {/* No `aria-live` here, for the reason `Elapsed` in live-log.tsx gives: a value that
+            changes every second is noise, and a run lasts minutes. `LiveAnnounce` below carries the
+            throttled announcement handoff § Accessibility actually asks for. */}
+        <p className="text-[30px] font-semibold tracking-[-0.03em] tabular-nums">
           {elapsed === null ? "—" : formatElapsed(elapsed)}
         </p>
 
@@ -171,7 +208,10 @@ export function ProgressRule({ fraction, className = "" }: { fraction: number; c
     >
       <div
         style={{ width: pct }}
-        className="absolute inset-y-0 left-0 bg-fg transition-[width] duration-[900ms] ease-linear motion-reduce:transition-none"
+        // Accent fill, ink nib — the artboard's own pair (02's `barStyle` is #b4531f, `nibStyle`
+        // #17150f), and what the 04d console rule in live-log.tsx already draws. An ink fill made
+        // the nib invisible against the bar it rides.
+        className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-[900ms] ease-linear motion-reduce:transition-none"
       />
       <div
         aria-hidden

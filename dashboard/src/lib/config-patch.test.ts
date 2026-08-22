@@ -160,6 +160,28 @@ describe("configRuleIssues", () => {
     ]);
   });
 
+  it("refuses claude-cli on an agent, with or without a model — the CLI cannot run it", () => {
+    // Handoff § Empty & error states: "claude-cli on a CLI agent | inline danger callout in
+    // settings, save blocked for that row". All three agents are run by tool-using workflows, and
+    // `CLAUDE_CLI_REFUSAL` (src/workflows/common.ts) is what they answer with.
+    const withModel = configRuleIssues({
+      ...base,
+      agents: { "ui-designer": { provider: "claude-cli", model: "claude-opus-x" } },
+    });
+    expect(withModel).toEqual([
+      {
+        path: "agents.ui-designer.provider",
+        message:
+          'provider "claude-cli" cannot run tool-using workflows: it does not execute AI SDK tools. ' +
+          "Pick another provider for ui-designer, or remove the override.",
+      },
+    ]);
+
+    // Without a model it is still the provider that is wrong, and it is reported once, not twice.
+    const bare = configRuleIssues({ ...base, agents: { "qa-tester": { provider: "claude-cli" } } });
+    expect(bare.map((i) => i.path)).toEqual(["agents.qa-tester.provider"]);
+  });
+
   it("allows an override that only changes the model, or that repeats the default provider", () => {
     expect(configRuleIssues({ ...base, agents: { "qa-tester": { model: "other" } } })).toEqual([]);
     expect(configRuleIssues({ ...base, agents: { "qa-tester": { provider: "lmstudio" } } })).toEqual([]);

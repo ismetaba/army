@@ -4,6 +4,7 @@ import { StatusMark } from "@/components/ledger/marks";
 import { RowActions } from "./row-actions";
 import { RunningClock } from "./running-clock";
 import {
+  failureReason,
   formatClock,
   formatDur,
   KINDS,
@@ -115,6 +116,7 @@ export function LedgerTable({
 function Row({ ws, row, archived }: { ws: string; row: LedgerRow; archived: boolean }) {
   const running = row.status === "running";
   const status = ledgerStatus(row);
+  const reason = failureReason(row);
   const watch =
     row.pid !== null
       ? `/ws/${encodeURIComponent(ws)}/live?pid=${row.pid}`
@@ -133,17 +135,39 @@ function Row({ ws, row, archived }: { ws: string; row: LedgerRow; archived: bool
     >
       <span className="mono text-[9.5px] tracking-[-0.03em] text-muted">{formatClock(row.createdAt)}</span>
 
-      <Link
-        href={`/ws/${encodeURIComponent(ws)}/run/${encodeURIComponent(row.runId)}`}
-        title={row.runId}
-        className="mono truncate text-[10.5px] tracking-[-0.04em] transition-colors duration-[180ms] hover:text-accent"
-      >
-        {row.runId}
-      </Link>
+      {/*
+        Archived runs are not linked: `/ws/[ws]/run/[id]` reads `runs/` only (`readRun` →
+        `realRunDir` → `runDir`), so a link to an archived run answers 404. Showing the id as plain
+        text says "it is still here, just not open" instead of sending the reader to a not-found
+        page — RESTORE in the actions column is what brings it back.
+      */}
+      {archived ? (
+        <span title={row.runId} className="mono truncate text-[10.5px] tracking-[-0.04em] text-ink-2">
+          {row.runId}
+        </span>
+      ) : (
+        <Link
+          href={`/ws/${encodeURIComponent(ws)}/run/${encodeURIComponent(row.runId)}`}
+          title={row.runId}
+          className="mono truncate text-[10.5px] tracking-[-0.04em] transition-colors duration-[180ms] hover:text-accent"
+        >
+          {row.runId}
+        </Link>
+      )}
 
       <span className="mono truncate text-[10px] tracking-[-0.03em] text-ink-2">{row.kind}</span>
 
-      <StatusMark status={status} />
+      {/* Handoff § Empty & error states: "run failure | row status `ERROR` + one-line reason". The
+          reason is truncated to the column and carried in full by `title`; the detail page's LOG
+          tab holds the trace. */}
+      <span className="flex min-w-0 flex-col gap-1">
+        <StatusMark status={status} />
+        {reason === null ? null : (
+          <span className="mono truncate text-[9px] tracking-[-0.03em] text-danger" title={reason}>
+            {reason}
+          </span>
+        )}
+      </span>
 
       <span
         className="mono truncate text-[9.5px] tracking-[-0.04em] text-ink-2"

@@ -298,6 +298,26 @@ export function configRuleIssues(config: unknown): FieldIssue[] {
     for (const [name, entry] of Object.entries(agents)) {
       if (!isPlainObject(entry)) continue;
       const { provider, model } = entry;
+
+      /*
+       * Handoff § Empty & error states: "claude-cli on a CLI agent | inline danger callout in
+       * settings, save blocked for that row".
+       *
+       * All three agents the panel can set (`ui-designer`, `qa-tester`, `code-reviewer`) are run by
+       * the CLI's tool-using workflows, and every one of them refuses this provider outright —
+       * `CLAUDE_CLI_REFUSAL` in src/workflows/common.ts: it "does not execute AI SDK tools". The
+       * form already drew the callout; without this the config was still written and the refusal
+       * only arrived at the next run. The message is the CLI's own reason, not a restatement.
+       */
+      if (provider === "claude-cli") {
+        push(
+          `agents.${name}.provider`,
+          'provider "claude-cli" cannot run tool-using workflows: it does not execute AI SDK tools. ' +
+            `Pick another provider for ${name}, or remove the override.`,
+        );
+        continue;
+      }
+
       if (!isBlank(model)) continue;
       // The precedence rule of SPEC § Model resolution, at the only level the panel can set:
       // an agent whose provider differs from `defaults.provider` cannot inherit `defaults.model`,

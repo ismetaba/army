@@ -21,6 +21,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RuledHead, shortWhen } from "@/components/task-header";
+import { useModalKeys } from "@/components/ledger/modal-focus";
+import { machineText } from "@/lib/untrusted";
 import {
   comparedViewports,
   pick,
@@ -126,7 +128,7 @@ export function DesignGallery({
               value={againstId}
               onChange={(e) => setAgainstId(e.target.value)}
               data-compare-select
-              className="mono min-w-0 max-w-[200px] bg-transparent text-[9.5px] text-fg outline-none focus-visible:underline"
+              className="mono tap min-w-0 max-w-[200px] bg-transparent text-[9.5px] text-fg outline-none focus-visible:underline"
             >
               <option value="">— off —</option>
               {compare.map((c) => (
@@ -202,7 +204,7 @@ function ScreenSection({ group, onOpen }: { group: ScreenGroup; onOpen: OpenFn }
       data-screen={group.screen}
     >
       <RuledHead
-        title={<span data-screen-name>{group.screen}</span>}
+        title={<span data-screen-name>{machineText(group.screen)}</span>}
         aside={
           <span className="mono shrink-0 text-[9px] text-muted">
             {shots} shot{shots === 1 ? "" : "s"}
@@ -274,7 +276,7 @@ function CompareGrid({
           data-compare-card
           data-screen={screen}
         >
-          <RuledHead title={screen} />
+          <RuledHead title={machineText(screen)} />
           {comparedViewports(groups, against.groups, screen).map((viewport) => (
             <div key={viewport} className="flex min-w-0 flex-col gap-2">
               <span className="colhead">{CELL[viewport].label}</span>
@@ -436,7 +438,7 @@ function Recording({ href }: { href: string }) {
         aside={
           <a
             href={href}
-            className="mono shrink-0 border-b border-accent text-[9.5px] text-accent hover:text-accent-hover"
+            className="mono tap shrink-0 border-b border-accent text-[9.5px] text-accent hover:text-accent-hover"
           >
             open raw
           </a>
@@ -536,17 +538,18 @@ function mmss(seconds: number): string {
  * reader will try first.
  */
 function Lightbox({ lit, onClose }: { lit: Lit; onClose: () => void }) {
+  const overlay = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey);
+  /*
+   * `esc`, the Tab trap and the focus returned on close (handoff § Accessibility). The trap is not
+   * optional given the `aria-modal="true"` above: without it Tab walked straight out of the overlay
+   * into the feedback textarea and the page's links, so assistive tech was told the page behind was
+   * unavailable while focus could in fact reach every control on it.
+   */
+  useModalKeys(overlay, onClose);
 
+  useEffect(() => {
     // The page behind must not scroll while the overlay is up — and the previous value is restored
     // rather than cleared, so this cannot leave the body permanently locked.
     const previous = document.body.style.overflow;
@@ -554,13 +557,13 @@ function Lightbox({ lit, onClose }: { lit: Lit; onClose: () => void }) {
     closeRef.current?.focus();
 
     return () => {
-      document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
+      ref={overlay}
       role="dialog"
       aria-modal="true"
       aria-label={`${lit.caption} — full size`}
@@ -576,7 +579,7 @@ function Lightbox({ lit, onClose }: { lit: Lit; onClose: () => void }) {
         <a
           href={lit.href}
           data-lightbox-raw
-          className="btnlabel border border-bg/50 px-2 py-1 text-bg hover:bg-bg/10"
+          className="btnlabel tap border border-bg/50 px-2 py-1 text-bg hover:bg-bg/10"
         >
           open raw
         </a>
@@ -585,7 +588,7 @@ function Lightbox({ lit, onClose }: { lit: Lit; onClose: () => void }) {
           ref={closeRef}
           onClick={onClose}
           data-lightbox-close
-          className="btnlabel border border-bg/50 px-2 py-1 text-bg hover:bg-bg/10"
+          className="btnlabel tap border border-bg/50 px-2 py-1 text-bg hover:bg-bg/10"
         >
           close · esc
         </button>

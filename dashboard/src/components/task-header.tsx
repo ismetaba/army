@@ -72,7 +72,7 @@ export function TaskTopBar({ ws }: { ws: string }) {
       <div className="flex min-w-0 items-center gap-4">
         <Link
           href={`/ws/${encodeURIComponent(ws)}`}
-          className="btnlabel shrink-0 text-ink-3 transition-colors duration-[180ms] hover:text-fg"
+          className="btnlabel tap shrink-0 text-ink-3 transition-colors duration-[180ms] hover:text-fg"
         >
           ← ledger
         </Link>
@@ -81,7 +81,7 @@ export function TaskTopBar({ ws }: { ws: string }) {
       </div>
       <Link
         href="/settings"
-        className="btnlabel shrink-0 text-ink-3 transition-colors duration-[180ms] hover:text-fg"
+        className="btnlabel tap shrink-0 text-ink-3 transition-colors duration-[180ms] hover:text-fg"
       >
         settings
       </Link>
@@ -170,7 +170,7 @@ export function TaskHeader({
                   <a
                     key={a.label}
                     href={a.href}
-                    className="mono border-b border-accent text-[10px] text-accent transition-colors duration-[180ms] hover:border-accent-hover hover:text-accent-hover"
+                    className="mono tap border-b border-accent text-[10px] text-accent transition-colors duration-[180ms] hover:border-accent-hover hover:text-accent-hover"
                   >
                     {a.label}
                   </a>
@@ -202,7 +202,8 @@ export function TaskTabs({ items, active }: { items: TabItem[]; active: string }
     <nav className="flex min-w-0 flex-wrap items-baseline gap-x-[22px] pt-3.5" aria-label="Task views">
       {items.map((item) => {
         const isActive = item.id === active;
-        const className = `btnlabel pb-1.5 ${
+        // `items-end` so the 2px accent underline stays on the text baseline inside the 44px box.
+        const className = `btnlabel tap items-end pb-1.5 ${
           isActive ? "border-b-2 border-accent text-fg" : "text-muted"
         }`;
         if (item.href === null || isActive) {

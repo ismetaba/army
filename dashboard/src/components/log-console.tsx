@@ -1,4 +1,5 @@
 import type { Ref, UIEventHandler } from "react";
+import { machineText } from "@/lib/untrusted";
 
 /*
  * The run console (handoff § 04d): a tinted block with a 3px ink left bar, earlier lines faint,
@@ -11,7 +12,9 @@ import type { Ref, UIEventHandler } from "react";
  * Log text is a model's output and its tool results, i.e. UNTRUSTED (SPEC § Dashboard security
  * invariants #3). It is rendered as a React text child — never HTML, never a link built from it —
  * and `whitespace-pre` keeps the `[HH:mm:ss]` column aligned instead of soft-wrapping a line into
- * something that reads like two.
+ * something that reads like two. `machineText` finishes the same thought: React escapes markup but
+ * does nothing about bidi overrides or C0/C1 controls, and both of those make a line display as
+ * something other than what the log holds.
  */
 
 /** How many lines at the tail are drawn in ink; everything before them recedes to `ink-faint`. */
@@ -53,7 +56,7 @@ export function LogConsole({
               i >= freshFrom ? "text-fg" : "text-ink-faint"
             } ${animate && i >= freshFrom ? "anim-rise" : ""}`}
           >
-            {line}
+            {machineText(line)}
           </div>
         ))}
 

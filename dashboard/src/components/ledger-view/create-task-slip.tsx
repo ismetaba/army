@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CopyButton } from "@/components/ledger/chrome";
+import { FOCUSABLE, trapTab } from "@/components/ledger/modal-focus";
 import {
   buildTriggerArgv,
   displayCommand,
@@ -171,26 +172,9 @@ export function CreateTaskSlip({
         void start();
         return;
       }
-      if (event.key !== "Tab") return;
-
-      // The trap. `document` rather than the sheet, so focus that has already escaped (the address
+      // The trap. The listener is on `document`, so focus that has already escaped (the address
       // bar, an extension) is pulled back rather than allowed to walk the page behind the dim.
-      const node = sheet.current;
-      if (node === null) return;
-      const focusable = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-        (el) => !el.hasAttribute("disabled") && el.tabIndex !== -1,
-      );
-      if (focusable.length === 0) return;
-      const firstEl = focusable[0]!;
-      const lastEl = focusable[focusable.length - 1]!;
-      const active = document.activeElement;
-      if (event.shiftKey && (active === firstEl || !node.contains(active))) {
-        event.preventDefault();
-        lastEl.focus();
-      } else if (!event.shiftKey && (active === lastEl || !node.contains(active))) {
-        event.preventDefault();
-        firstEl.focus();
-      }
+      trapTab(sheet.current, event);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -374,7 +358,7 @@ export function CreateTaskSlip({
                 <code data-slip-will-run className="mono min-w-0 flex-1 truncate text-[10.5px]">
                   {willRun}
                 </code>
-                <CopyButton value={willRun} />
+                <CopyButton value={willRun} what="the command" />
               </div>
             )}
           </div>
@@ -435,9 +419,6 @@ export function CreateTaskSlip({
 /** The field names the design lays out itself, so the "extras" loop does not render them twice. */
 const DESIGNED = new Set(["base", "desc", "url", "feature", "video"]);
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 /**
  * `main` is pre-filled rather than left empty, because the design shows it and because it is what
  * the CLI defaults to anyway — so `WILL RUN` states the ref that will actually be diffed instead
@@ -490,7 +471,12 @@ function BaseRefField({
 }) {
   return (
     <FieldFrame label="base ref" aside="diff is taken against this ref" error={error}>
-      <div className="flex flex-wrap items-center gap-3">
+      {/* The underline belongs to the ROW, not to the input: artboard 03 runs it the full width of
+          the slip, under the quick-ref chips, so the chips sit on the field's own line. */}
+      <div
+        data-slip-field-row="base"
+        className={`field-row flex flex-wrap items-center gap-3 ${error === null ? "" : "field-row-error"}`}
+      >
         <input
           type="text"
           value={value}
@@ -498,9 +484,9 @@ function BaseRefField({
           placeholder="main"
           data-slip-field="base"
           aria-label="Base ref"
-          className={`field mono caret-accent min-w-0 flex-1 text-[14px] ${error === null ? "" : "border-danger"}`}
+          className="field-bare mono caret-accent min-w-0 flex-1 text-[14px]"
         />
-        <div className="flex gap-2">
+        <div className="ml-auto flex gap-2">
           {["develop", "HEAD~1"].map((ref) => (
             <button
               key={ref}

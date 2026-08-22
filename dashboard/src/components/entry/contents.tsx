@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Leader } from "@/components/ledger/chrome";
 import { formatAgo } from "@/lib/format";
+import { machineText } from "@/lib/untrusted";
 import { RunningChip } from "./running-chip";
 
 /*
@@ -72,7 +73,7 @@ export function ContentsRow({ row, index }: { row: EntryRow; index: number }) {
             {row.name}
           </span>
           <span className="min-w-0 truncate font-mono text-[10.5px] leading-[1.3] tracking-[-0.03em] text-muted">
-            {row.repoRoot ?? "not in workspaces.json"}
+            {row.repoRoot === null ? "not in workspaces.json" : machineText(row.repoRoot)}
           </span>
         </span>
       </div>

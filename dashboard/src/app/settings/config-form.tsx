@@ -285,6 +285,9 @@ export function ConfigForm({
   const inheritProvider = state.defaultsProvider || "default";
   const inheritModel = state.defaultsModel.trim() || "default";
 
+  /** Agent rows set to a provider the CLI's tool-using workflows refuse — SAVE is blocked. */
+  const claudeCliAgents = AGENT_NAMES.filter((n) => state.agents[n]?.provider === "claude-cli");
+
   return (
     // `noValidate`: the browser's own constraint validation must not get a vote here. With it on,
     // a port typed as "eighty" makes the form *refuse to submit* and shows a native tooltip, so
@@ -485,9 +488,12 @@ export function ConfigForm({
           </SettingsField>
         </div>
 
-        <p id="pass-env-note" className="max-w-[62ch] text-[12px] leading-[1.6] text-ink-2">
+        <p id="pass-env-note" className="max-w-[62ch] min-w-0 text-[12px] leading-[1.6] text-ink-2">
           The password itself is never asked for, never shown and never written here. Set{" "}
-          <span className="mono text-[11px] text-fg">
+          {/* `break-all` because this echoes a value out of `aw.config.json` and an env-var name
+              contains no spaces — with no break opportunity a long one pushed the whole settings
+              page sideways, the one violation of handoff § Interactions' hard overflow rule. */}
+          <span className="mono text-[11px] break-all text-fg">
             {state.passEnv.trim() || "AW_TEST_PASSWORD"}
           </span>{" "}
           in your shell or <span className="mono text-[11px] text-fg">.env</span>; only its name is
@@ -552,7 +558,20 @@ export function ConfigForm({
 
       <div className="flex min-w-0 flex-col gap-3 border-t border-line pt-5">
         <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3">
-          <PrimaryButton type="submit" disabled={status.kind === "saving"} className={ACTION}>
+          {/* Handoff § Empty & error states: "claude-cli on a CLI agent | inline danger callout in
+              settings, save blocked for that row". The route refuses it too (`configRuleIssues`) —
+              that is where the rule actually lives, since the CLI is what refuses the provider.
+              This only spares the round trip and puts the reason where the reader is looking. */}
+          <PrimaryButton
+            type="submit"
+            disabled={status.kind === "saving" || claudeCliAgents.length > 0}
+            title={
+              claudeCliAgents.length === 0
+                ? undefined
+                : `${claudeCliAgents.join(", ")} cannot run on claude-cli`
+            }
+            className={ACTION}
+          >
             {status.kind === "saving" ? "saving…" : "save"}
           </PrimaryButton>
           <QuietButton

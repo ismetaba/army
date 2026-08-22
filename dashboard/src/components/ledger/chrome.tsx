@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CopyButtonClient } from "./copy-button";
+import { commandText } from "@/lib/untrusted";
 
 /*
  * The furniture every Ledger screen is built from: top bars, section heads, command strips and
@@ -54,8 +55,19 @@ export function FieldLabel({ children }: { children: ReactNode }) {
 }
 
 /**
- * A monospace command in a tinted strip with a 3px ink left bar. `copy` is the exact string the
- * COPY button puts on the clipboard — always the literal command, never the rendered DOM.
+ * A monospace command in a tinted strip with a 3px ink left bar. COPY puts the string on the
+ * clipboard exactly as it is shown — always this prop, never the rendered DOM.
+ *
+ * "Exactly as shown" is the whole contract, which is why the scrub happens ONCE, here, to the
+ * string both the `<code>` and the button use: a command strip is a thing a human pastes into a
+ * terminal, and parts of these commands come out of run manifests an agent wrote. C0/C1 controls
+ * in them are ANSI sequences the terminal acts on when the command echoes — `shellQuote` makes the
+ * shell treat the bytes as data and does nothing about what the terminal renders. Bidi overrides
+ * go with them, so what you read is what lands on the clipboard.
+ *
+ * Evidence blocks are deliberately NOT this component (see `Verbatim` in report-cases.tsx): being
+ * able to see the exact bytes a server returned is the point of those, and nobody pastes them into
+ * a shell.
  */
 export function CommandStrip({
   command,
@@ -68,20 +80,37 @@ export function CommandStrip({
   action?: ReactNode;
   className?: string;
 }) {
+  const safe = commandText(command);
   return (
     <div className={`cmd-strip flex items-start justify-between gap-4 px-3.5 py-2.5 ${className}`}>
       <code className="mono min-w-0 flex-1 overflow-x-auto whitespace-pre text-[10.5px] leading-[1.7]">
-        {command}
+        {safe}
       </code>
-      {action ?? <CopyButton value={command} label={onCopyLabel} />}
+      {action ?? <CopyButton value={safe} label={onCopyLabel} what="the command" />}
     </div>
   );
 }
 
 /** Client-side copy button, kept here so every COPY in the panel behaves identically. */
-export function CopyButton({ value, label = "COPY" }: { value: string; label?: string }) {
-  return <CopyButtonClient value={value} label={label} />;
+export function CopyButton({
+  value,
+  label = "COPY",
+  what,
+}: {
+  value: string;
+  label?: string;
+  /** What is being copied, for the accessible name. The VALUE never goes in there — see below. */
+  what?: string;
+}) {
+  return <CopyButtonClient value={value} label={label} what={what} />;
 }
+
+/*
+ * The three buttons and the back link all carry `.tap`: below 900px every one of them is at least
+ * 44px tall (handoff § Accessibility), and above it they are exactly the height the artboards draw.
+ * Doing it here rather than at each call site is the point — a 10px mono label is a 16px target,
+ * and there are dozens of them.
+ */
 
 /** Primary action: ink fill, mono label. */
 export function PrimaryButton({
@@ -92,7 +121,7 @@ export function PrimaryButton({
   return (
     <button
       {...rest}
-      className={`btnlabel px-4 py-2 text-bg transition-colors duration-[180ms] disabled:opacity-40 ${
+      className={`btnlabel tap px-4 py-2 text-bg transition-colors duration-[180ms] disabled:opacity-40 ${
         accent ? "bg-accent hover:bg-accent-hover" : "bg-fg hover:bg-ink-2"
       } ${rest.className ?? ""}`}
     >
@@ -110,7 +139,7 @@ export function OutlineButton({
   return (
     <button
       {...rest}
-      className={`btnlabel border px-4 py-2 transition-colors duration-[180ms] disabled:opacity-40 ${
+      className={`btnlabel tap border px-4 py-2 transition-colors duration-[180ms] disabled:opacity-40 ${
         danger
           ? "border-danger text-danger hover:bg-danger hover:text-bg"
           : "border-rule-2 text-ink-2 hover:border-fg hover:text-fg"
@@ -130,7 +159,7 @@ export function QuietButton({
   return (
     <button
       {...rest}
-      className={`btnlabel text-ink-3 transition-colors duration-[180ms] ${
+      className={`btnlabel tap text-ink-3 transition-colors duration-[180ms] ${
         danger ? "hover:text-danger" : "hover:text-fg"
       } ${rest.className ?? ""}`}
     >
@@ -144,7 +173,7 @@ export function BackLink({ href, children }: { href: string; children: ReactNode
   return (
     <Link
       href={href}
-      className="btnlabel text-ink-3 transition-colors duration-[180ms] hover:text-fg"
+      className="btnlabel tap text-ink-3 transition-colors duration-[180ms] hover:text-fg"
     >
       {children}
     </Link>

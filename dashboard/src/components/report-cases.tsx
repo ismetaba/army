@@ -23,6 +23,7 @@ import {
   sortCases,
 } from "@/components/report-data";
 import { CopyButton } from "@/components/ledger/chrome";
+import { machineText } from "@/lib/untrusted";
 import { EmptyNote } from "@/components/task-header";
 import { SEVERITY_INK } from "@/components/verdict";
 
@@ -192,13 +193,13 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
                   style={failing ? { boxShadow: "inset 3px 0 0 var(--danger)" } : undefined}
                 >
                   <span className="mono min-w-0 text-[10px] break-all" role="cell">
-                    {c.id}
+                    {machineText(c.id)}
                   </span>
                   <span className="min-w-0" role="cell">
                     <button
                       type="button"
                       data-case-open
-                      className="min-w-0 cursor-pointer text-left text-[12.5px] break-words hover:underline"
+                      className="tap min-w-0 cursor-pointer text-left text-[12.5px] break-words hover:underline"
                     >
                       {c.name}
                     </button>
@@ -268,7 +269,7 @@ function FilterRow<T extends string>({
           data-filter={`${label}:${o.value}`}
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`statusword cursor-pointer pb-0.5 transition-colors duration-[180ms] ${
+          className={`statusword tap cursor-pointer pb-0.5 transition-colors duration-[180ms] ${
             value === o.value
               ? "border-b-2 border-fg text-fg"
               : "text-ink-2 hover:text-fg"
@@ -368,7 +369,7 @@ function CaseDrawer({
       >
         <header className="flex min-w-0 items-center justify-between gap-3 border-b-2 border-fg px-[26px] py-[18px]">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="mono min-w-0 text-[11px] break-all">{testCase.id}</span>
+            <span className="mono min-w-0 text-[11px] break-all">{machineText(testCase.id)}</span>
             <span
               className={`inline-flex shrink-0 items-center gap-[7px] ${CASE_INK[testCase.status]}`}
             >
@@ -484,7 +485,7 @@ function Verbatim({
     <section className="flex min-w-0 flex-col gap-2.5">
       <div className="flex min-w-0 items-baseline justify-between gap-3">
         <span className="colhead">{label}</span>
-        {value === undefined ? null : <CopyButton value={value} />}
+        {value === undefined ? null : <CopyButton value={value} what={label.toLowerCase()} />}
       </div>
       {value === undefined ? (
         <p className="text-[12.5px] text-ink-2">Not recorded for this case.</p>

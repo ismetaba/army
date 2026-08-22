@@ -9,7 +9,7 @@ import {
 } from "@/lib/store";
 import { listActiveRuns } from "@/lib/runner";
 import { LedgerTable } from "@/components/ledger-view/ledger-table";
-import { LiveMargin } from "@/components/ledger-view/live-margin";
+import { LiveAnnounce, LiveMargin } from "@/components/ledger-view/live-margin";
 import { LiveRunProvider } from "@/components/ledger-view/live-run";
 import { MobileLedger } from "@/components/ledger-view/mobile-ledger";
 import { StartTask } from "@/components/ledger-view/start-task";
@@ -131,6 +131,10 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
               .map((w) => ({ name: w.name, runCount: w.runCount }))}
             backend={backend}
           />
+
+          {/* The workspace's one polite live region, outside both layouts so it is mounted exactly
+              once and survives the switch from "running" to the filed verdict. */}
+          <LiveAnnounce lastFiled={lastFiled} />
 
           <div className="hidden gap-9 px-10 pt-9 pb-11 min-[900px]:flex">
             <LiveMargin ws={ws} lastFiled={lastFiled} week={week} />

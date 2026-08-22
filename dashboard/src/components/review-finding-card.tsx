@@ -1,6 +1,7 @@
 import type { Finding, Severity } from "@shared/schemas";
 import { CopyButton } from "@/components/ledger/chrome";
 import { SEVERITY_INK, SEVERITY_MARK } from "@/components/verdict";
+import { commandText, machineText } from "@/lib/untrusted";
 
 /*
  * One reviewer finding, as the card that sits INLINE UNDER the diff row it names (handoff § 04a).
@@ -65,8 +66,11 @@ export function FindingCard({
     >
       <header className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
         <SeverityLine severity={finding.severity} />
+        {/* `machineText`: a path is the thing the reader is going to open, and a U+202E in it makes
+            the card name one file while the manifest names another. React escapes markup; it does
+            nothing about bidi overrides. */}
         <span className="mono min-w-0 text-[9px] break-all text-muted">
-          {finding.file}:{finding.line}
+          {machineText(finding.file)}:{finding.line}
         </span>
       </header>
 
@@ -92,10 +96,12 @@ export function FindingCard({
       <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:gap-3">
         <span className="colhead shrink-0 sm:w-[34px] sm:pt-[3px]">fix</span>
         <div className="cmd-strip flex min-w-0 flex-1 items-start justify-between gap-3 px-3 py-2.5">
+          {/* Styled as a command strip and copied like one, so it is scrubbed like one — the fix
+              is the line a reader lifts into a terminal, and it is model-written. */}
           <p className="min-w-0 flex-1 text-[13px] leading-[1.6] break-words text-ink-2 [text-wrap:pretty]">
-            {finding.fix}
+            {commandText(finding.fix)}
           </p>
-          <CopyButton value={finding.fix} />
+          <CopyButton value={commandText(finding.fix)} what="the fix" />
         </div>
       </div>
     </article>

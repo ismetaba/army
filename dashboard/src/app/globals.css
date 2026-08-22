@@ -198,6 +198,26 @@ body {
   text-transform: uppercase;
 }
 
+/*
+ * A ≥44px touch target below 900px, its natural height above.
+ *
+ * Handoff § Accessibility: "mobile rows and actions must stay ≥44px tall on the 375 layout". The
+ * ledger spells this out inline (`min-h-11 min-[900px]:min-h-0`) on every one of its controls; the
+ * task-detail screens carry the same rule as a class, because a 10px mono label is a 16px-tall
+ * target and there are two dozen of them — tabs, filter chips, artifact links, every COPY. 900px
+ * is the same breakpoint the ledger switches layouts at.
+ */
+.tap {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+@media (min-width: 900px) {
+  .tap {
+    min-height: 0;
+  }
+}
+
 .title-screen {
   font-size: 46px;
   font-weight: 600;
@@ -237,14 +257,13 @@ body {
 .mark-done {
   background: var(--ok);
 }
+/*
+ * A solid 45° hatch, no box: the reference draws it as a 2px/4px stripe with no border, and this
+ * mark sits on four different surfaces (paper, tint, danger-tint, card) — so the gaps are
+ * `transparent` rather than one hard-coded background colour.
+ */
 .mark-error {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--danger) 0 1.5px,
-    transparent 1.5px 3px
-  );
-  outline: 1px solid var(--danger);
-  outline-offset: -1px;
+  background: repeating-linear-gradient(45deg, var(--danger) 0 2px, transparent 2px 4px);
 }
 .mark-awaiting {
   border: 1.5px solid var(--warn);
@@ -296,6 +315,39 @@ body {
 }
 .field:focus {
   border-bottom-color: var(--accent);
+}
+
+/*
+ * The same underline, carried by the ROW instead of the input.
+ *
+ * Artboard 03 runs the base-ref rule across the whole slip, passing UNDER the `develop` / `HEAD~1`
+ * quick-ref chips so they sit on the field's own line — one ruled line per field. A border on the
+ * input alone stopped short of the chips and left them floating over nothing. The three states are
+ * `.field`'s, read off the input inside the row; the order here is the cascade order, so focus
+ * wins over filled exactly as it does above.
+ */
+.field-row {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 9px;
+}
+.field-row:has(input:not(:placeholder-shown)) {
+  border-bottom-color: var(--fg);
+}
+.field-row:has(input:focus) {
+  border-bottom-color: var(--accent);
+}
+.field-row-error,
+.field-row-error:has(input:not(:placeholder-shown)),
+.field-row-error:has(input:focus) {
+  border-bottom-color: var(--danger);
+}
+/* The input inside a `.field-row` — no rule of its own; the row draws it. */
+.field-bare {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  outline: none;
 }
 
 /* the three surfaces that are allowed a shadow */

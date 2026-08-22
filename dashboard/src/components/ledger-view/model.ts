@@ -12,6 +12,7 @@
  * cannot start depending on fields the design does not show.
  */
 import type { RunManifest, Severity, Verdict } from "@shared/schemas";
+import { machineText } from "@/lib/untrusted";
 
 export type RunKind = RunManifest["kind"];
 export type RunStatus = RunManifest["status"];
@@ -224,6 +225,20 @@ export function resultCount(row: LedgerRow): { value: number; noun: string } {
 }
 
 /** The one-line summary in the JUST FILED block — the design's "6 findings across 3 files". */
+/**
+ * The one-line reason a run failed, for the ledger row beside its `ERROR` mark (handoff § Empty &
+ * error states: "row status `ERROR` + one-line reason").
+ *
+ * `null` for anything that did not fail. The manifest's `error` is agent-written, so it is scrubbed
+ * and folded onto ONE line here: a multi-line trace belongs on the detail page's LOG tab, and a row
+ * that grows to eight lines stops being a row.
+ */
+export function failureReason(row: Pick<LedgerRow, "status" | "error">): string | null {
+  if (row.status !== "error") return null;
+  const text = machineText(row.error ?? "").replace(/\s+/g, " ").trim();
+  return text === "" ? "the run ended with an error" : text;
+}
+
 export function filedSummary(row: LedgerRow): string {
   if (row.status === "error") return row.error ?? "the run ended with an error";
   if (row.status === "cancelled") return "cancelled before it finished";

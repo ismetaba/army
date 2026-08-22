@@ -20,6 +20,7 @@ import {
 } from "@/components/verdict";
 import { EmptyNote, RuledHead } from "@/components/task-header";
 import { QuietButton } from "@/components/ledger/chrome";
+import { machineText } from "@/lib/untrusted";
 
 /**
  * The Review result (handoff § 04a — the flagship): the diff the verdict was reached on, with
@@ -224,8 +225,10 @@ function SeverityFilter({
   value: Filter;
   onChange: (next: Filter) => void;
 }) {
+  // `.tap` gives each chip a 44px target below 900px (handoff § Accessibility) without changing
+  // the row at 1440, where the design's 17px chips are what the artboard draws.
   const entry = (active: boolean, disabled: boolean) =>
-    `flex items-center gap-[7px] pb-0.5 transition-colors duration-[180ms] ${
+    `tap gap-[7px] pb-0.5 transition-colors duration-[180ms] ${
       active ? "border-b-2 border-fg text-fg" : disabled ? "text-muted" : "text-ink-2 hover:text-fg"
     }`;
 
@@ -303,7 +306,9 @@ function FindingsJumpList({
       ) : (
         <ol className="flex min-w-0 flex-col">
           {items.map((item, index) => {
-            const active = focused === item.domId;
+            // Handoff § 04a: "first item active on tint". Nothing has been picked yet on first
+            // paint, so the list opens on its first entry rather than with no entry marked.
+            const active = focused === null ? index === 0 : focused === item.domId;
             return (
               <li key={item.domId} className="min-w-0">
                 <button
@@ -324,7 +329,7 @@ function FindingsJumpList({
                     {item.title}
                   </span>
                   <span className="mono min-w-0 pl-[26px] text-[9px] break-all text-muted">
-                    {item.file}:{item.line}
+                    {machineText(item.file)}:{item.line}
                   </span>
                 </button>
               </li>
@@ -410,13 +415,13 @@ function FileSection({
           onClick={onToggle}
           aria-expanded={!collapsed}
           aria-controls={panelId}
-          className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-line bg-surface-2 px-3.5 py-2.5 text-left transition-colors duration-[180ms] hover:bg-paper-hover"
+          className="tap w-full min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 border-b border-line bg-surface-2 px-3.5 py-2.5 text-left transition-colors duration-[180ms] hover:bg-paper-hover"
         >
           <span className="flex min-w-0 items-center gap-2">
             <span aria-hidden className="mono w-3 shrink-0 text-[9px] text-muted">
               {collapsed ? "▸" : "▾"}
             </span>
-            <span className="mono min-w-0 text-[10px] break-all">{file.file}</span>
+            <span className="mono min-w-0 text-[10px] break-all">{machineText(file.file)}</span>
             {file.status !== "modified" ? <Tag>{STATUS_LABEL[file.status]}</Tag> : null}
             {file.binary ? <Tag>binary</Tag> : null}
             {file.truncated ? <Tag>truncated</Tag> : null}

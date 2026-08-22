@@ -15,6 +15,7 @@
  * truth (SPEC § Types) while zod stays out of the client bundle.
  */
 import type { RunManifest, ScreenShot } from "@shared/schemas";
+import { hasControlChars } from "@/lib/untrusted";
 import { featureLabel, slugify } from "./report-data";
 
 export type Viewport = ScreenShot["viewport"];
@@ -135,16 +136,20 @@ export const FEEDBACK_MAX_ITEMS = 50;
 /** The queue file's name inside the run directory. Same string on the read and write sides. */
 export const FEEDBACK_FILE = "feedback-queue.json";
 
-/**
- * C0/C7F control characters other than tab and newline.
+/*
+ * The control-character rule itself lives in `@/lib/untrusted` — one regex, applied on the way IN
+ * (the text a human types, below) and on the way OUT (both queue parsers). Rejected rather than
+ * stripped, and the reason is the copy button: queued text is interpolated into a command a human
+ * pastes into a terminal. An ESC (0x1B) in that string is an ANSI escape sequence the terminal
+ * ACTS ON when the command echoes — it can rewrite the visible line so that what is displayed is
+ * not what is executed. Quoting (`shellQuote`) makes the shell treat the bytes as data; it does
+ * nothing about what the terminal renders.
  *
- * Rejected, not stripped, and the reason is the copy button: queued text is interpolated into a
- * command a human pastes into a terminal. An ESC (0x1B) in that string is an ANSI escape sequence
- * that the terminal ACTS ON when the command echoes — it can rewrite the visible line so that
- * what is displayed is not what is executed. Quoting (`shellQuote`) makes the shell treat the
- * bytes as data; it does nothing about what the terminal renders. So they never enter the file.
+ * Gating only the panel's own textarea left the point of the rule unguarded: `feedback-queue.json`
+ * sits in a store an agent's unconfined `bash` also writes to (see store.ts's header), so an entry
+ * this panel never validated reached the clipboard inside the `--iterate '…'` command the UI tells
+ * you to paste. Both parsers below now apply it too.
  */
-const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 
 export type Validated<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -163,7 +168,7 @@ export function validateFeedbackText(value: unknown): Validated<string> {
   // typed rather than line endings the browser added.
   const text = value.replace(/\r\n?/g, "\n").trim();
   if (text === "") return { ok: false, error: "feedback is empty" };
-  if (CONTROL_CHARS.test(text)) return { ok: false, error: "feedback contains control characters" };
+  if (hasControlChars(text)) return { ok: false, error: "feedback contains control characters" };
   if (text.length > FEEDBACK_MAX_CHARS) {
     return { ok: false, error: `feedback is longer than ${FEEDBACK_MAX_CHARS} characters` };
   }
@@ -195,6 +200,9 @@ export function parseFeedbackQueue(raw: string): FeedbackEntry[] | null {
     const { text, createdAt } = item as Record<string, unknown>;
     if (typeof text !== "string" || typeof createdAt !== "string") continue;
     if (text === "" || text.length > FEEDBACK_MAX_CHARS) continue;
+    // An entry carrying terminal escapes is malformed, exactly like one missing a field: it is not
+    // displayed, and it never reaches the copyable `--iterate` command built from these entries.
+    if (hasControlChars(text)) continue;
     out.push({ text, createdAt });
   }
   return out;
@@ -234,6 +242,9 @@ export function strictFeedbackQueue(raw: string): FeedbackEntry[] | null {
     if (keys.length !== 2 || keys[0] !== "createdAt" || keys[1] !== "text") return null;
     if (typeof entry.text !== "string" || typeof entry.createdAt !== "string") return null;
     if (entry.text === "" || entry.text.length > FEEDBACK_MAX_CHARS) return null;
+    // Refused, not dropped: silently rewriting the file without this entry would DELETE whatever a
+    // CLI-side writer put there. The route turns `null` into the same 409 an unparseable file gets.
+    if (hasControlChars(entry.text)) return null;
     out.push({ text: entry.text, createdAt: entry.createdAt });
   }
   return out;

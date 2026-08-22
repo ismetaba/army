@@ -324,7 +324,7 @@ function RawReport({ run, relPath }: { run: RunManifest; relPath: string }) {
                 </span>
                 <a
                   href={artifactHref(run.workspace, run.runId, relPath)}
-                  className="mono shrink-0 border-b border-accent text-[9.5px] text-accent hover:text-accent-hover"
+                  className="mono tap shrink-0 border-b border-accent text-[9.5px] text-accent hover:text-accent-hover"
                 >
                   open raw
                 </a>

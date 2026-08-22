@@ -20,6 +20,7 @@ import { RowActions } from "./row-actions";
 import { RunningClock } from "./running-clock";
 import { useTaskLauncher } from "./task-launcher";
 import {
+  failureReason,
   formatClock,
   formatDur,
   formatElapsed,
@@ -134,7 +135,9 @@ function InProgressCard() {
         <span className="mono text-[9px] tracking-[-0.03em] text-muted">{run.kind}</span>
       </div>
       <div className="flex items-baseline justify-between gap-3">
-        <p aria-live="polite" className="text-[26px] font-semibold tracking-[-0.03em] tabular-nums">
+        {/* No `aria-live`: the page's single `LiveAnnounce` region carries the throttled
+            announcement for both layouts (see live-margin.tsx). */}
+        <p className="text-[26px] font-semibold tracking-[-0.03em] tabular-nums">
           {elapsed === null ? "—" : formatElapsed(elapsed)}
         </p>
         <span className="flex items-baseline gap-[7px]">
@@ -155,6 +158,7 @@ function InProgressCard() {
 function RunBlock({ ws, row, archived }: { ws: string; row: LedgerRow; archived: boolean }) {
   const running = row.status === "running";
   const status = ledgerStatus(row);
+  const reason = failureReason(row);
   const watch =
     row.pid !== null
       ? `/ws/${encodeURIComponent(ws)}/live?pid=${row.pid}`
@@ -167,12 +171,20 @@ function RunBlock({ ws, row, archived }: { ws: string; row: LedgerRow; archived:
       className={`flex flex-col gap-[7px] border-b border-line px-4 py-1.5 ${running ? "bg-surface-2" : ""}`}
     >
       <div className="flex items-center justify-between gap-2.5">
-        <Link
-          href={`/ws/${encodeURIComponent(ws)}/run/${encodeURIComponent(row.runId)}`}
-          className="mono flex min-h-11 min-w-0 flex-1 items-center truncate text-[9.5px] tracking-[-0.04em]"
-        >
-          {row.runId}
-        </Link>
+        {/* Not linked when archived, for the reason `ledger-table.tsx`'s `Row` spells out: the
+            task-detail route reads `runs/`, so an archived id would link to a 404. */}
+        {archived ? (
+          <span className="mono flex min-h-11 min-w-0 flex-1 items-center truncate text-[9.5px] tracking-[-0.04em] text-ink-2">
+            {row.runId}
+          </span>
+        ) : (
+          <Link
+            href={`/ws/${encodeURIComponent(ws)}/run/${encodeURIComponent(row.runId)}`}
+            className="mono flex min-h-11 min-w-0 flex-1 items-center truncate text-[9.5px] tracking-[-0.04em]"
+          >
+            {row.runId}
+          </Link>
+        )}
         <span className={`flex flex-none items-center gap-1.5 ${statusInk(status)}`}>
           <StatusSquare status={status} />
           <span className="statusword text-[9px]">{SHORT[status]}</span>
@@ -184,6 +196,13 @@ function RunBlock({ ws, row, archived }: { ws: string; row: LedgerRow; archived:
         {running ? <RunningClock startedAt={row.createdAt} /> : formatDur(row.durationMs)} ·{" "}
         {row.provider} / {row.model}
       </p>
+
+      {/* The failure's one-line reason, same rule as the 1440 table (handoff § Empty & error). */}
+      {reason === null ? null : (
+        <p className="mono truncate text-[9px] tracking-[-0.04em] text-danger" title={reason}>
+          {reason}
+        </p>
+      )}
 
       {running ? (
         <Link

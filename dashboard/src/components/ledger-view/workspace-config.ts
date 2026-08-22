@@ -42,7 +42,20 @@ export function workspaceFacts(ws: string): WorkspaceFacts {
       ? backend.port
       : null;
   const baseUrl = app === null ? null : str(app.baseUrl);
-  const healthPath = backend === null ? "/health" : (str(backend.healthPath) ?? "/health");
+
+  /*
+   * `healthPath` is a PATH. It is resolved against the origin below, and `new URL()` lets an
+   * absolute value replace that origin outright — so an `aw.config.json` naming
+   * `http://elsewhere/probe` here would send the ledger's render-time GET to `elsewhere`,
+   * silently overriding the `baseUrl` the user set in Settings. Anything that is not a
+   * slash-rooted path falls back to the default rather than being obeyed.
+   *
+   * `baseUrl` itself is deliberately NOT restricted: it is the address of the user's own backend
+   * and a staging deployment is a legitimate answer (handoff § 05 lists both). This only stops one
+   * field from quietly overruling another.
+   */
+  const declared = backend === null ? null : str(backend.healthPath);
+  const healthPath = declared !== null && /^\/(?!\/)/.test(declared) ? declared : "/health";
 
   const origin = baseUrl ?? (port === null ? null : `http://127.0.0.1:${port}`);
   let backendUrl: string | null = null;

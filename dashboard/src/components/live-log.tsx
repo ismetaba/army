@@ -585,7 +585,7 @@ export function FinishedBar({
           <Link
             href={resultHref}
             data-finished-open
-            className="btnlabel bg-accent px-5 py-[11px] text-bg transition-colors duration-[180ms] hover:bg-accent-hover"
+            className="btnlabel tap bg-accent px-5 py-[11px] text-bg transition-colors duration-[180ms] hover:bg-accent-hover"
           >
             open result
           </Link>
