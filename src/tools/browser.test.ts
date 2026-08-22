@@ -1,11 +1,14 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  VIDEO_FILE,
   blankViewportError,
+  contextOptions,
   isBlankPage,
   makeScreenshotNamer,
   normalizeScreenName,
   screenshotPath,
+  videoFileNames,
 } from './browser';
 
 const DIR = '/repo/screenshots/add-a-placeholder-about-team-page-with';
@@ -172,5 +175,62 @@ describe('blankViewportError', () => {
   it('still explains itself when no URL has been visited yet', () => {
     const { error } = blankViewportError('mobile', '');
     expect(error).toContain('"url":"<the URL of that screen>"');
+  });
+});
+
+// T15 --video ---------------------------------------------------------------
+
+const VIEWPORTS = {
+  mobile: { width: 375, height: 812 },
+  desktop: { width: 1440, height: 900 },
+} as const;
+
+describe('contextOptions', () => {
+  it('is exactly the pre-T15 options object when no video is requested', () => {
+    // The whole "--video costs a run without the flag nothing" claim lives here: not a
+    // `recordVideo: undefined` key that Playwright would still have to look at, but no key.
+    const options = contextOptions(VIEWPORTS, 'desktop');
+    expect(options).toEqual({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+    expect(Object.keys(options).sort()).toEqual(['deviceScaleFactor', 'viewport']);
+    expect('recordVideo' in options).toBe(false);
+  });
+
+  it('records into the requested directory at the viewport’s own size', () => {
+    expect(contextOptions(VIEWPORTS, 'mobile', { dir: '/runs/shots' })).toEqual({
+      viewport: { width: 375, height: 812 },
+      deviceScaleFactor: 1,
+      // Not Playwright's default 800x800 box: the video has to match the stills beside it.
+      recordVideo: { dir: '/runs/shots', size: { width: 375, height: 812 } },
+    });
+  });
+
+  it('leaves the screenshot options untouched for both viewports', () => {
+    for (const viewport of ['mobile', 'desktop'] as const) {
+      const { recordVideo, ...rest } = contextOptions(VIEWPORTS, viewport, { dir: '/d' });
+      expect(rest).toEqual(contextOptions(VIEWPORTS, viewport));
+      expect(recordVideo).toBeDefined();
+    }
+  });
+});
+
+describe('videoFileNames', () => {
+  it('gives the desktop recording the run’s one video name', () => {
+    // The manifest holds a single design.video, and the gallery plays the wide frame.
+    expect([...videoFileNames(['mobile', 'desktop'])]).toEqual([
+      ['mobile', 'video-mobile.webm'],
+      ['desktop', VIDEO_FILE],
+    ]);
+    // Insertion order is whichever viewport the agent opened first; the answer must not depend
+    // on it, or the same session could produce video.webm from either context.
+    expect(videoFileNames(['desktop', 'mobile']).get('desktop')).toBe(VIDEO_FILE);
+  });
+
+  it('still produces video.webm when only one viewport was ever opened', () => {
+    expect(videoFileNames(['mobile']).get('mobile')).toBe(VIDEO_FILE);
+    expect(videoFileNames(['desktop']).get('desktop')).toBe(VIDEO_FILE);
+  });
+
+  it('names nothing when nothing was recorded', () => {
+    expect(videoFileNames([]).size).toBe(0);
   });
 });

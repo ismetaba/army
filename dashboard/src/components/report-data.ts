@@ -112,12 +112,32 @@ export function featureLabel(input: RunManifest["input"]): string {
  * looseness is a false neighbour now and then, which is visible and harmless (the run is linked,
  * you click it, it is about something else) — unlike a false *absence*, which looks like "this
  * feature has never regressed".
+ *
+ * Which is why "keep letters and digits" means EVERY script's letters and digits (`\p{L}\p{N}`),
+ * not `[a-z0-9]`. An ASCII-only class deletes a feature described in Turkish, Chinese, Russian or
+ * Greek down to the empty string, and an empty slug matches nothing — so the panel would state
+ * outright that no other run covers the feature, which is the exact false absence this function
+ * exists to avoid. The owner of this repo writes features in Turkish.
+ *
+ * Two folds happen before the class, both about the same word typed twice:
+ *  - `NFKC`, so a composed `ş` and a `s`+combining-cedilla are one character, not two;
+ *  - Turkish dotted/dotless i. `toLowerCase()` is locale-independent by spec, so `İ` becomes
+ *    `i`+U+0307 (the combining dot survives as a non-letter and would split the word) while `I`
+ *    becomes plain `i` — meaning `GİRİŞİ` and `girişi`, and `KULLANICI` and `kullanıcı`, fold
+ *    apart unless `i`+U+0307 and `ı` are both mapped to `i` here.
  */
 export function slugify(value: string): string {
-  return value
+  const folded = value
+    .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/i̇/gu, "i") // lowercased Turkish dotted capital İ
+    .replace(/ı/gu, "i"); // Turkish dotless ı
+  const slug = folded.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+  if (slug !== "") return slug;
+  // A feature named entirely in symbols ("→→→") has no letters or digits at all. Falling back to
+  // the folded text keeps it grouping with itself instead of collapsing into the "no feature
+  // recorded" bucket; a genuinely empty label still yields "", which matches nothing.
+  return folded.trim().replace(/\s+/gu, "-");
 }
 
 /** The slug two test-feature runs must share to count as runs of the same feature. */

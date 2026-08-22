@@ -19,6 +19,7 @@ export function registerDesignLoop(program: Command): void {
     .description('Implement and visually verify UI with the ui-designer agent, then stop for feedback')
     .argument('<feature>', 'feature description, or a path to a spec file')
     .option('-i, --iterate <feedback>', 'feedback to apply to the existing implementation')
+    .option('--video', 'screen-record the browser session to screenshots/<slug>/video.webm')
     .option('-p, --provider <p>', 'provider id (default: config agents.ui-designer, else defaults)')
     .option('-m, --model <m>', 'model id (default: config agents.ui-designer, else defaults)')
     .option('-c, --config <path>', 'path to aw.config.json (default: ./aw.config.json)')
@@ -28,6 +29,7 @@ export function registerDesignLoop(program: Command): void {
         feature: string,
         opts: {
           iterate?: string;
+          video?: boolean;
           provider?: string;
           model?: string;
           config?: string;

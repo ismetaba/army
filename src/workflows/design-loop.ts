@@ -9,7 +9,13 @@ import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
 import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
-import { closeBrowser, makeBrowserTools } from '../tools/browser';
+import {
+  VIDEO_FILE,
+  closeBrowser,
+  makeBrowserTools,
+  type RecordedVideo,
+  type VideoOptions,
+} from '../tools/browser';
 import { ensureUp, slugify, type EnsureUpHandle } from '../util';
 import { listRuns, startRun, type RunHandle } from '../store';
 import {
@@ -40,6 +46,8 @@ export interface DesignLoopOptions {
   feature: string;
   /** Feedback for a second (or later) pass over an existing implementation. */
   iterate?: string;
+  /** T15 `--video`: screen-record the browser session next to the screenshots. */
+  video?: boolean;
   provider?: string;
   model?: string;
   config?: string;
@@ -52,6 +60,8 @@ export interface DesignLoopResult {
   plan: string;
   /** Absolute paths of every PNG under `screenshots/<slug>/`. */
   screenshots: string[];
+  /** Absolute path of `screenshots/<slug>/video.webm`, when `--video` produced one. */
+  video?: string;
   /** False when the tree was already clean (T10 step 7: skip cleanly). */
   committed: boolean;
   /** Short sha of the checkpoint commit, when one was made. */
@@ -295,6 +305,36 @@ export function findScreenshots(dir: string): FoundScreenshot[] {
     }
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Remove every `.webm` sitting directly in `dir`, so a `--video` pass never mixes its own
+ * recording with an earlier one. Top level only — `findScreenshots` recurses because a screen
+ * name may contain `/`, but Playwright writes recordings flat into `recordVideo.dir`.
+ *
+ * Best effort by design: a file that cannot be removed is reported and the run carries on, since
+ * a leftover recording is worth a warning and not worth failing a design pass over.
+ */
+export function clearRecordings(dir: string): string[] {
+  const removed: string[] = [];
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return removed; // no directory yet: nothing recorded, nothing stale
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.webm$/i.test(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    try {
+      fs.rmSync(full);
+      removed.push(full);
+      log(`removed a recording left by an earlier pass: ${full}`);
+    } catch (err) {
+      log(`warning: could not remove ${full}: ${messageOf(err)}`);
+    }
+  }
+  return removed;
 }
 
 /**
@@ -654,6 +694,7 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
     input: {
       args: formatArgs('design-loop', [featureArg], {
         iterate,
+        video: opts.video,
         provider: opts.provider,
         model: opts.model,
         config: opts.config,
@@ -682,6 +723,9 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
       screenshotDir,
       frontendUrl,
       feedbackHistory,
+      // The recording is written into the screenshot directory, so the video the human plays
+      // sits with the stills it belongs to and travels with them into the checkpoint commit.
+      video: opts.video ? { dir: screenshotDir } : undefined,
     });
     run.finish('done');
     return result;
@@ -726,6 +770,7 @@ async function designSession(ctx: {
   screenshotDir: string;
   frontendUrl: string;
   feedbackHistory: string[];
+  video?: VideoOptions;
 }): Promise<DesignLoopResult> {
   const {
     run,
@@ -741,6 +786,7 @@ async function designSession(ctx: {
     screenshotDir,
     frontendUrl,
     feedbackHistory,
+    video,
   } = ctx;
 
   // --- start the app (T10 step 3) --------------------------------------------
@@ -752,13 +798,62 @@ async function designSession(ctx: {
     }
     handles.length = 0;
   };
+  /**
+   * The recordings `closeBrowser` finished, kept across calls.
+   *
+   * `cleanup()` is deliberately idempotent and is called more than once on some paths; the
+   * second call has no contexts left and reports nothing, so the first non-empty answer is the
+   * one that stands.
+   */
+  let videos: RecordedVideo[] = [];
   const cleanup = async (): Promise<void> => {
-    await closeBrowser().catch(() => undefined);
+    const closed = await closeBrowser(log).catch(() => [] as RecordedVideo[]);
+    if (closed.length > 0) videos = closed;
     await stopStarted();
   };
+
+  /**
+   * Copy the run's video into `artifacts/video.webm` and record it as `design.video`.
+   *
+   * Merged into whatever `design` already holds rather than replacing it, because both callers
+   * arrive with something worth keeping: the success path has just written the screens and
+   * judgment calls, and the failure path is carrying the `feedbackHistory` recorded before the
+   * session started.
+   */
+  const saveVideo = (): RecordedVideo | undefined => {
+    // `?? videos[0]`: if the DESKTOP recording's `saveAs` threw (ENOSPC, a locked file) while the
+    // mobile one saved, `closeBrowser` reports only the mobile entry and no entry is `primary`.
+    // A real, playable file on disk must not be reported as "no recording was produced".
+    const primary = videos.find((v) => v.primary) ?? videos[0];
+    if (!primary) return undefined;
+    // EVERY recording is copied into the run, not just the primary one. The originals live in the
+    // target repo's `screenshots/<slug>/`, which the next `--iterate` pass overwrites — the same
+    // reason the PNGs are copied below. `design.video` still names the primary, because SPEC
+    // § Types gives the manifest exactly one video field.
+    let primaryRel: string | undefined;
+    for (const recorded of videos) {
+      let bytes: Buffer;
+      try {
+        bytes = fs.readFileSync(recorded.path);
+      } catch (err) {
+        log(`warning: could not copy ${recorded.path} into the run: ${messageOf(err)}`);
+        continue;
+      }
+      const rel = run.artifact(path.basename(recorded.path), bytes);
+      if (recorded === primary) primaryRel = rel;
+    }
+    if (primaryRel === undefined) return undefined;
+    const design = run.manifest.design ?? { screens: [], judgmentCalls: [], feedbackHistory };
+    run.update({ design: { ...design, video: primaryRel } });
+    return primary;
+  };
+
   /** `fail()` after resources exist: release Chromium and the dev servers first, then exit 1. */
   const bail = async (message: string): Promise<never> => {
     await cleanup();
+    // A session that died half-way is exactly the one a human wants to watch, and closing the
+    // browser above is what finally wrote the file — so the failed run keeps its video too.
+    if (video) saveVideo();
     return fail(message);
   };
 
@@ -803,7 +898,7 @@ async function designSession(ctx: {
 
   // --- the session -----------------------------------------------------------
   const agent = loadAgent('ui-designer');
-  const browserTools = makeBrowserTools({ screenshotDir, viewports: cfg.viewports });
+  const browserTools = makeBrowserTools({ screenshotDir, viewports: cfg.viewports, video });
   const tools: ToolSet = {
     ...makeCoreTools('designer', repoRoot),
     ...browserTools,
@@ -867,7 +962,8 @@ async function designSession(ctx: {
   // --- PLAN (T10 step 4) -----------------------------------------------------
   log(
     `design-loop "${oneLine(featureArg)}" — ${provider}/${model}, slug "${slug}"` +
-      (iterate ? ' (iterate)' : ''),
+      (iterate ? ' (iterate)' : '') +
+      (video ? ` (recording to ${path.join(video.dir, VIDEO_FILE)})` : ''),
   );
   const files = await listFrontendFiles(repoRoot);
   const planPrompt = buildPlanPrompt({ description, specPath, iterate, files, frontendUrl });
@@ -889,6 +985,24 @@ async function designSession(ctx: {
     screenshotDir,
     cfg,
   });
+  /*
+   * A `--video` run clears the previous pass's recordings before it records its own.
+   *
+   * A stale PNG gets a per-file "(stale — not taken in this run)" label on stdout, and that is
+   * enough because the reader sees the label and the path together. A video cannot carry one: it
+   * is watched in a player, in a directory listing, long after this output has scrolled away — so
+   * a reviewer told "no recording for this session" who then opens `screenshots/<slug>/video.webm`
+   * is watching the previous pass and cannot tell. `--iterate` reuses the slug, so the directory
+   * is exactly where that happens; the checkpoint's `git add -A` would commit the old file beside
+   * the fresh PNGs on top of it.
+   *
+   * Deleting rather than labelling is safe because `saveVideo()` copies EVERY recording into the
+   * run's `artifacts/` — the previous pass's videos are already preserved where nothing overwrites
+   * them. `page@<hash>.webm` and `video-unsaved-*.webm` go too: an orphan from a crashed session
+   * is the same problem wearing a different name.
+   */
+  if (video) clearRecordings(video.dir);
+
   const startedAtMs = Date.now();
   log(`session: implementing and verifying at ${frontendUrl} (up to ${MAX_STEPS} steps)`);
   let session = await ask(sessionPrompt, tools, timeoutMs());
@@ -953,6 +1067,17 @@ async function designSession(ctx: {
   }
 
   // --- checkpoint (T10 step 7) -----------------------------------------------
+  // Playwright writes a video only when the context CLOSES, and the checkpoint below is
+  // `git add -A`: finishing the recording after it would leave video.webm out of the very commit
+  // its screenshots are in. So a --video run releases Chromium here instead. Only a --video run:
+  // without the flag the shutdown stays exactly where T10 put it, after the checkpoint.
+  if (video) {
+    await cleanup();
+    const primary = videos.find((v) => v.primary) ?? videos[0];
+    if (primary) log(`video: ${primary.path} (${primary.bytes} bytes)`);
+    else log('warning: --video was requested but Playwright produced no recording');
+  }
+
   const result = await checkpoint(repoRoot, slug);
   if (result.error) {
     log(`warning: ${result.error}`);
@@ -981,6 +1106,9 @@ async function designSession(ctx: {
       feedbackHistory,
     },
   });
+  // After the screens, not before: `saveVideo` merges into whatever `design` holds, and the
+  // update above replaces the whole block.
+  const savedVideo = video ? saveVideo() : undefined;
   write(1, 'CHANGED FILES:');
   if (result.files.length > 0) for (const f of result.files) write(1, `  ${f}`);
   else write(1, '  (none — the working tree was already clean)');
@@ -992,6 +1120,25 @@ async function designSession(ctx: {
     write(1, `  ${shot.path}${staleSet.has(shot.path) ? '  (stale — not taken in this run)' : ''}`);
   }
   write(1, '');
+  // Only on a --video run: a run without the flag prints exactly the block T10 specified.
+  if (video) {
+    write(1, 'VIDEO:');
+    if (videos.length === 0) {
+      // Nothing on disk either: `clearRecordings` swept the directory before the session, so
+      // "none" here means none, not "none that we named".
+      write(1, '  (none — Playwright produced no recording for this session)');
+    } else {
+      // Every recording is listed, not only the primary one. When the primary's `saveAs` failed
+      // and only the mobile file survived, `savedVideo` is that file — printing it under its own
+      // viewport is the only way the reader learns a playable recording exists at all.
+      const head = savedVideo ?? videos[0]!;
+      write(1, `  ${head.path}  (${head.bytes} bytes)`);
+      for (const other of videos.filter((v) => v !== head)) {
+        write(1, `  ${other.path}  (${other.viewport}, ${other.bytes} bytes)`);
+      }
+    }
+    write(1, '');
+  }
   write(1, 'JUDGMENT CALLS:');
   if (judgmentCalls.length > 0) for (const call of judgmentCalls) write(1, `  - ${call}`);
   else write(1, '  (none reported)');
@@ -1008,6 +1155,7 @@ async function designSession(ctx: {
     slug,
     plan,
     screenshots: shots.map((s) => s.path),
+    video: savedVideo?.path,
     committed: result.committed,
     commit: result.commit,
     changedFiles: result.files,

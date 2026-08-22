@@ -320,16 +320,22 @@ export function readLogTail(workspace: string, runId: string, max = 500): LogTai
       fs.closeSync(fd);
     }
   } catch (err) {
+    // The errno, never `err.message`: Node puts the ABSOLUTE path of the file in the message for
+    // EACCES, EISDIR, ELOOP, ENAMETOOLONG and EIO, and SPEC § Dashboard security invariants #2
+    // forbids surfacing an error that names a real path.
     return {
       ...absent,
       exists: true,
       bytes: size,
-      error: err instanceof Error ? err.message : String(err),
+      error: err instanceof Error && "code" in err ? String(err.code) : "read error",
     };
   }
 
-  // A byte offset lands mid-line (and possibly mid-UTF-8-character); the first line goes.
-  if (partial) text = text.slice(text.indexOf("\n") + 1);
+  // A byte offset lands mid-line (and possibly mid-UTF-8-character); the first line goes — but
+  // only if there IS a later line. A tail with no newline in it at all is one long line, and
+  // `indexOf` returning -1 would slice from 0 and keep it; dropping it would show an empty box.
+  const firstBreak = partial ? text.indexOf("\n") : -1;
+  if (firstBreak >= 0) text = text.slice(firstBreak + 1);
 
   const lines = text.replace(/\n$/, "").split("\n");
   const counted = text === "" ? 0 : lines.length;

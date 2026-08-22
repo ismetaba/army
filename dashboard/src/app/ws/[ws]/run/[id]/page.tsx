@@ -4,6 +4,8 @@ import { artifactHref, manifestArtifacts, readLogTail, readRun } from "@/lib/sto
 import type { RunKind, RunManifest } from "@/lib/store";
 import { formatBytes, formatDuration, formatWhen } from "@/lib/format";
 import { StatusBadge } from "@/components/status-badge";
+import { ReportPanel } from "@/components/report-panel";
+import { ReviewTab } from "@/components/review-tab";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +89,17 @@ export default async function RunPage({ params, searchParams }: PageProps<"/ws/[
           })}
         </nav>
 
-        {tab === "log" ? <LogPanel ws={ws} id={id} /> : <ComingSoon tab={tab} />}
+        {tab === "log" ? (
+          <LogPanel ws={ws} id={id} />
+        ) : tab === "review" ? (
+          // T18. `parseTab` has already proven this run's kind is `review`.
+          <ReviewTab run={run} />
+        ) : tab === "report" ? (
+          // T19. `parseTab` has already proven this run's kind is `test-feature`.
+          <ReportPanel run={run} />
+        ) : (
+          <ComingSoon tab={tab} />
+        )}
       </div>
     </div>
   );
@@ -212,8 +224,8 @@ function LogPanel({ ws, id }: { ws: string; id: string }) {
   if (log.error !== null) {
     return (
       <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-        <span className="font-mono">log.txt</span> ({formatBytes(log.bytes)}) could not be read:{" "}
-        {log.error}
+        <span className="font-mono">log.txt</span> ({formatBytes(log.bytes)}) could not be read (
+        {log.error}).
       </p>
     );
   }

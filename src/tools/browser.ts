@@ -113,6 +113,10 @@ function push(session: Session, message: string): void {
  * `size` is pinned to the viewport rather than left to Playwright, which otherwise scales the
  * recording down to fit 800×800 — a 1440-wide desktop video that no longer matches the 1440-wide
  * screenshots beside it is a poor piece of evidence.
+ *
+ * The pin is exact only for EVEN widths and heights: the VP8 encoder works in 2-pixel macroblocks
+ * and rounds an odd dimension DOWN, so the default 375×812 mobile viewport records at 374×812
+ * beside 375-wide PNGs. That 1px is the encoder, not a bug — do not go hunting for it.
  */
 export function contextOptions(
   viewports: Viewports,
@@ -146,10 +150,14 @@ async function createSession(
   return session;
 }
 
-function getSession(name: BrowserViewport, viewports: Viewports): Promise<Session> {
+function getSession(
+  name: BrowserViewport,
+  viewports: Viewports,
+  video?: VideoOptions,
+): Promise<Session> {
   let pending = sessions.get(name);
   if (!pending) {
-    pending = createSession(name, viewports).catch((err: unknown) => {
+    pending = createSession(name, viewports, video).catch((err: unknown) => {
       sessions.delete(name); // failed creation must not be cached
       throw err;
     });
@@ -158,18 +166,116 @@ function getSession(name: BrowserViewport, viewports: Viewports): Promise<Sessio
   return pending;
 }
 
-/** Close every context and the browser itself. Safe to call more than once. */
-export async function closeBrowser(): Promise<void> {
-  const pending = [...sessions.values()];
+/** The run's video — the file `design.video` points at, and the one the T20 gallery plays. */
+export const VIDEO_FILE = 'video.webm';
+
+/**
+ * Deterministic file name per recorded viewport.
+ *
+ * The manifest holds ONE `design.video` (SPEC § Types) while the design loop drives two
+ * independent contexts, and Playwright cannot merge them (stitching two `.webm`s would mean an
+ * encoder, i.e. a new dependency). So the recording that answers to `video.webm` is the desktop
+ * one — every design-loop session is required to visit desktop, and it is the frame the gallery
+ * is built for — and any other viewport keeps its own `video-<viewport>.webm` beside it rather
+ * than being thrown away. A session that only ever opened mobile still produces `video.webm`,
+ * so "the run's video" is one predictable name no matter what the agent did.
+ */
+export function videoFileNames(
+  recorded: readonly BrowserViewport[],
+): Map<BrowserViewport, string> {
+  const names = new Map<BrowserViewport, string>();
+  const primary = recorded.includes('desktop') ? 'desktop' : recorded[0];
+  for (const viewport of recorded) {
+    names.set(viewport, viewport === primary ? VIDEO_FILE : `video-${viewport}.webm`);
+  }
+  return names;
+}
+
+/**
+ * Close every context and the browser itself, and return the recordings that produced a file.
+ * Safe to call more than once — the second call has no sessions left and returns `[]`.
+ *
+ * Closing is what *writes* a Playwright video: while a context is open the file does not exist,
+ * and killing the process loses the recording entirely. So a caller that wants the video must
+ * call this before it needs the file, not merely before it exits — which is why the design loop
+ * releases Chromium ahead of its checkpoint commit on a `--video` run.
+ */
+export async function closeBrowser(
+  log: (message: string) => void = (message) => write(2, message),
+): Promise<RecordedVideo[]> {
+  const pending = [...sessions.entries()];
   sessions.clear();
-  for (const p of pending) {
+
+  const open: { viewport: BrowserViewport; session: Session }[] = [];
+  for (const [viewport, p] of pending) {
     try {
-      const session = await p;
-      await session.context.close();
+      open.push({ viewport, session: await p });
     } catch {
-      // a context that never opened, or already closed, needs no cleanup
+      // a context that never opened needs no cleanup
     }
   }
+
+  const names = videoFileNames(open.filter((o) => o.session.videoDir).map((o) => o.viewport));
+  const videos: RecordedVideo[] = [];
+  for (const { viewport, session } of open) {
+    // Captured BEFORE the close: `page.video()` on a closed page is not guaranteed to hand back
+    // the handle, and `saveAs` is the only thing that knows when the file is finished.
+    const video = session.videoDir ? session.page.video() : null;
+    try {
+      await session.context.close();
+    } catch {
+      // already closed
+    }
+    if (!video || !session.videoDir) continue;
+    const file = path.join(session.videoDir, names.get(viewport) ?? `video-${viewport}.webm`);
+    try {
+      // saveAs waits for the recording to be flushed; delete drops Playwright's random-named
+      // original, which would otherwise sit next to the screenshots and land in the checkpoint
+      // commit as a second copy of the same video.
+      await video.saveAs(file);
+      await video.delete().catch(() => undefined);
+      const { size } = await fs.stat(file);
+      if (size === 0) {
+        log(`warning: the ${viewport} recording came out empty (0 bytes): ${file}`);
+        continue;
+      }
+      videos.push({
+        viewport,
+        path: file,
+        bytes: size,
+        primary: names.get(viewport) === VIDEO_FILE,
+      });
+    } catch (err) {
+      /*
+       * The recording we failed to rename is still Playwright's own `page@<hash>.webm`, sitting in
+       * the screenshot directory. Deleting it would destroy the only copy; leaving it under a
+       * random name means the next successful checkpoint's `git add -A` commits an unnamed video
+       * nobody can account for — the very "second copy of the same video in the target repo's
+       * history" the `video.delete()` above exists to prevent.
+       *
+       * So it is renamed to a deterministic, greppable name instead. `video.path()` is asked for
+       * the original AFTER the context is closed, which is when Playwright has finished writing.
+       */
+      const original = await video.path().catch(() => null);
+      let rescued: string | null = null;
+      if (original !== null) {
+        const target = path.join(session.videoDir, `video-unsaved-${viewport}.webm`);
+        try {
+          await fs.rename(original, target);
+          rescued = target;
+        } catch {
+          // leave Playwright's file exactly where it is rather than lose it
+        }
+      }
+      log(
+        `warning: could not save the ${viewport} recording as ${file}: ${errorOf(err).error}\n` +
+          (rescued !== null
+            ? `  Playwright's original was kept as ${rescued}`
+            : `  Playwright's original may remain in ${session.videoDir} under a page@… name`),
+      );
+    }
+  }
+
   const browser = browserPromise;
   browserPromise = null;
   if (browser) {
@@ -179,6 +285,7 @@ export async function closeBrowser(): Promise<void> {
       // ignore
     }
   }
+  return videos;
 }
 
 function errorOf(err: unknown): ToolError {
@@ -311,7 +418,7 @@ export function blankViewportError(viewport: BrowserViewport, lastUrl: string): 
  * without synthesising AI SDK tool-execution options.
  */
 export function makeBrowserActions(opts: BrowserToolsOptions) {
-  const { screenshotDir, viewports } = opts;
+  const { screenshotDir, viewports, video } = opts;
   const namer = makeScreenshotNamer(screenshotDir, opts.log);
   /** Last URL any viewport reached, so the refusal above can name the call to make. */
   let lastUrl = '';
@@ -326,7 +433,7 @@ export function makeBrowserActions(opts: BrowserToolsOptions) {
   return {
     async goto(input: { url: string; viewport: BrowserViewport }): Promise<GotoResult> {
       try {
-        const { page } = await getSession(input.viewport, viewports);
+        const { page } = await getSession(input.viewport, viewports, video);
         await page.goto(input.url, { waitUntil: 'networkidle', timeout: NAV_TIMEOUT_MS });
         lastUrl = page.url();
         navigated.add(input.viewport);
@@ -343,7 +450,7 @@ export function makeBrowserActions(opts: BrowserToolsOptions) {
       viewport: BrowserViewport;
     }): Promise<ScreenshotResult> {
       try {
-        const { page } = await getSession(input.viewport, viewports);
+        const { page } = await getSession(input.viewport, viewports, video);
         // Before the name is claimed: a refused screenshot must not burn the file name its
         // retry will need.
         if (!navigated.has(input.viewport) || isBlankPage(page.url())) {
@@ -360,7 +467,7 @@ export function makeBrowserActions(opts: BrowserToolsOptions) {
 
     async click(input: { selector: string; viewport: BrowserViewport }): Promise<ClickResult> {
       try {
-        const { page } = await getSession(input.viewport, viewports);
+        const { page } = await getSession(input.viewport, viewports, video);
         await page.click(input.selector, { timeout: ACTION_TIMEOUT_MS });
         return { ok: true, selector: input.selector };
       } catch (err) {
@@ -374,7 +481,7 @@ export function makeBrowserActions(opts: BrowserToolsOptions) {
       viewport: BrowserViewport;
     }): Promise<FillResult> {
       try {
-        const { page } = await getSession(input.viewport, viewports);
+        const { page } = await getSession(input.viewport, viewports, video);
         await page.fill(input.selector, input.value, { timeout: ACTION_TIMEOUT_MS });
         return { ok: true, selector: input.selector };
       } catch (err) {

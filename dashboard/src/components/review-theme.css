@@ -1,0 +1,70 @@
+/*
+ * Colours the Review view needs and the rest of the panel does not: diff tints, severity chips
+ * and the amber verdict.
+ *
+ * They live here rather than in `globals.css` for two reasons. They are used by exactly one
+ * feature, and `globals.css` is shared with the tabs being built alongside this one — a token
+ * only the Review view reads belongs next to the Review view.
+ *
+ * The CONVENTION is globals.css's, deliberately unchanged: every colour is a variable defined
+ * twice — once on `:root`, once inside `prefers-color-scheme: dark` — and components reference
+ * them as `bg-[var(--diff-add-bg)]`. No `dark:` variants anywhere, so there is never a pair of
+ * classes that can drift apart. Add a colour to BOTH blocks or not at all.
+ *
+ * Green/red for APPROVE and REQUEST CHANGES are not here: `--done-*` and `--error-*` in
+ * globals.css already are those colours, and a second near-identical green is how a panel ends
+ * up with two greens.
+ */
+:root {
+  /* diff rows — row tint, then the stronger tint for the line-number gutters */
+  --diff-add-bg: #e8fdee;
+  --diff-add-num: #cdf6d8;
+  --diff-del-bg: #fdecea;
+  --diff-del-num: #fbd8d4;
+  --diff-hunk-bg: #eceef4;
+  --diff-hunk-fg: #55606f;
+  --diff-gutter-fg: #90909e;
+
+  /* verdict: APPROVE WITH NITS is the one that has no equivalent in globals.css */
+  --warn-bg: #fbeecb;
+  --warn-fg: #7a5300;
+
+  /* severity chips and badges (SPEC § Types: BLOCKER > MAJOR > MINOR > NIT) */
+  --sev-blocker-bg: #fbd5d5;
+  --sev-blocker-fg: #8e1616;
+  --sev-major-bg: #fde3c8;
+  --sev-major-fg: #8a4a06;
+  --sev-minor-bg: #dbe7fd;
+  --sev-minor-fg: #14449c;
+  --sev-nit-bg: #e4e4e8;
+  --sev-nit-fg: #4c4c56;
+
+  /* the ring drawn on the card the sidebar just scrolled to */
+  --review-focus: #2450c8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --diff-add-bg: #0f2a1b;
+    --diff-add-num: #1a4a2c;
+    --diff-del-bg: #2e1517;
+    --diff-del-num: #4e2124;
+    --diff-hunk-bg: #1c1f28;
+    --diff-hunk-fg: #98a2b3;
+    --diff-gutter-fg: #7b7b8c;
+
+    --warn-bg: #3b2c08;
+    --warn-fg: #efc866;
+
+    --sev-blocker-bg: #4b1414;
+    --sev-blocker-fg: #ffb3b3;
+    --sev-major-bg: #422a0e;
+    --sev-major-fg: #f0b674;
+    --sev-minor-bg: #17284a;
+    --sev-minor-fg: #a9c8ff;
+    --sev-nit-bg: #26262e;
+    --sev-nit-fg: #b9b9c6;
+
+    --review-focus: #86aaf7;
+  }
+}

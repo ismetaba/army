@@ -8,6 +8,7 @@ import {
   buildPlanPrompt,
   buildSessionPrompt,
   checkpoint,
+  clearRecordings,
   extractJudgmentCalls,
   findScreenshots,
   frontendFiles,
@@ -205,6 +206,39 @@ describe('findScreenshots', () => {
 
   it('returns [] for a directory that does not exist', () => {
     expect(findScreenshots(path.join(tempDir(), 'missing'))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// clearRecordings (T15 --video)
+// ---------------------------------------------------------------------------
+
+describe('clearRecordings', () => {
+  it('removes every .webm in the directory and nothing else', () => {
+    // The point is the `--iterate` case: a stale PNG carries a "(stale)" label on stdout, a
+    // stale video cannot, so a leftover recording is deleted rather than presented.
+    const dir = tempDir();
+    fs.mkdirSync(path.join(dir, 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'video.webm'), 'a');
+    fs.writeFileSync(path.join(dir, 'video-mobile.webm'), 'b');
+    fs.writeFileSync(path.join(dir, 'page@a330d5858c7c4311666ee6faab08b8f7.webm'), 'c');
+    fs.writeFileSync(path.join(dir, 'video-unsaved-desktop.webm'), 'd');
+    fs.writeFileSync(path.join(dir, 'home-desktop.png'), 'p');
+    fs.writeFileSync(path.join(dir, 'nested', 'home-mobile.png'), 'p');
+
+    const removed = clearRecordings(dir).map((f) => path.basename(f)).sort();
+    expect(removed).toEqual([
+      'page@a330d5858c7c4311666ee6faab08b8f7.webm',
+      'video-mobile.webm',
+      'video-unsaved-desktop.webm',
+      'video.webm',
+    ]);
+    expect(fs.readdirSync(dir).sort()).toEqual(['home-desktop.png', 'nested']);
+    expect(findScreenshots(dir)).toHaveLength(2);
+  });
+
+  it('is a no-op for a directory that does not exist', () => {
+    expect(clearRecordings(path.join(tempDir(), 'missing'))).toEqual([]);
   });
 });
 

@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { TestCase } from "@shared/schemas";
+import type { Severity, TestCase } from "@shared/schemas";
 import type { CaseKind, CaseStatus } from "@/components/report-data";
 import { KIND_ORDER, STATUS_ORDER, countByKind, countByStatus, sortCases } from "@/components/report-data";
 
@@ -33,8 +33,14 @@ const STATUS_STYLE: Record<CaseStatus, string> = {
  * BLOCKER and MAJOR share the error colours because they are the same message — "this one is
  * real" — and are told apart by the ring; MINOR and NIT deliberately recede into the neutral
  * pair, because a red NIT next to a red BLOCKER is how a reader learns to ignore red.
+ *
+ * Keyed on `Severity`, not `string`, for the same reason `STATUS_STYLE` above is keyed on
+ * `CaseStatus`: a fifth value added to the SPEC enum must break this build, not silently render
+ * as a grey pill. The `?? fallback` at the call sites stays as belt and braces — `severity` comes
+ * out of an agent-written manifest, and a manifest that slipped past validation should still draw
+ * something.
  */
-const SEVERITY_STYLE: Record<string, string> = {
+const SEVERITY_STYLE: Record<Severity, string> = {
   BLOCKER: "bg-error-bg text-error-fg ring-1 ring-error-fg/50 font-semibold",
   MAJOR: "bg-error-bg text-error-fg",
   MINOR: "bg-cancelled-bg text-cancelled-fg",
@@ -71,15 +77,23 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const close = useCallback(() => {
-    setSelected(null);
     const trigger = triggerRef.current;
     triggerRef.current = null;
-    // The drawer unmounts in this same commit; focus after paint.
-    requestAnimationFrame(() => trigger?.focus());
+    /*
+     * Focus the row BEFORE the drawer unmounts, not after.
+     *
+     * Order matters: if the drawer's Close button is still the focused element when React removes
+     * it, the browser has already dropped focus on <body> by the time any callback of ours runs,
+     * and a keyboard user is back at the top of the page. Moving focus out first means the
+     * element being removed is not the focused one, so nothing is lost — and it needs no
+     * `requestAnimationFrame`, which would not fire at all in a background tab.
+     */
+    trigger?.focus();
+    setSelected(null);
   }, []);
 
   return (
-    <section className="flex min-w-0 flex-col gap-3">
+    <section className="flex min-w-0 flex-col gap-3" data-report-cases>
       <div className="flex flex-col gap-2">
         <FilterRow
           label="status"
@@ -109,7 +123,9 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
 
       {visible.length === 0 ? (
         <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-          No cases match these filters.
+          {/* "no cases at all" and "no cases left after filtering" are different problems, and
+              telling a reader to loosen filters they never set is the more annoying of the two. */}
+          {cases.length === 0 ? "This report has no cases." : "No cases match these filters."}
         </p>
       ) : (
         /* The table is wider than a phone and scrolls INSIDE this box — `min-w-0` is what stops a
@@ -135,21 +151,32 @@ export function ReportCases({ cases }: { cases: TestCase[] }) {
                   data-case-row={c.id}
                   data-status={c.status}
                   data-kind={c.kind}
-                  className={`border-b border-line last:border-0 ${
+                  /*
+                   * T19 step 1 is "row click opens a detail drawer", so the whole row is the hit
+                   * target — the id cell and the FAIL badge are what a reader aims at, and they
+                   * were dead. The BUTTON is still the accessible control: it is what a screen
+                   * reader announces and what Enter/Space activate, and its click bubbles to here,
+                   * so one handler serves mouse, keyboard and AT alike. Focus is sent to that
+                   * button either way, which is where `close()` returns it.
+                   */
+                  onClick={(e) => {
+                    const button = e.currentTarget.querySelector<HTMLButtonElement>("[data-case-open]");
+                    if (button !== null) {
+                      triggerRef.current = button;
+                      if (document.activeElement !== button) button.focus();
+                    }
+                    setSelected(index);
+                  }}
+                  className={`cursor-pointer border-b border-line last:border-0 ${
                     c.status === "FAIL" ? "bg-error-bg/40" : ""
                   } ${selected === index ? "outline outline-2 -outline-offset-2 outline-link" : ""}`}
                 >
                   <td className="px-3 py-2 align-top font-mono text-xs break-all">{c.id}</td>
                   <td className="max-w-[28rem] px-3 py-2 align-top">
-                    {/* The button, not the row, is the control: it is what a screen reader
-                        announces and what Enter/Space activate for free. */}
                     <button
                       type="button"
+                      data-case-open
                       className="w-full cursor-pointer text-left text-link hover:underline break-words"
-                      onClick={(e) => {
-                        triggerRef.current = e.currentTarget;
-                        setSelected(index);
-                      }}
                     >
                       {c.name}
                     </button>
@@ -236,10 +263,40 @@ function FilterRow<T extends string>({
 function CaseDrawer({ testCase, onClose }: { testCase: TestCase; onClose: () => void }) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     closeRef.current?.focus();
   }, []);
+
+  /**
+   * Keep Tab inside the panel.
+   *
+   * `aria-modal="true"` tells a screen reader the rest of the page is inert; without containment
+   * four Tab presses walked out into the feature-history links behind the overlay, so a keyboard
+   * user was navigating content their reader had been told did not exist. A `<dialog>` +
+   * `showModal()` would give this for free, but it also brings the top layer and its own backdrop,
+   * which is a bigger change to a sheet that deliberately does not lock body scroll — so the cycle
+   * is done here, in the ten lines it takes, with no dependency.
+   */
+  const trapTab = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab") return;
+    const root = panelRef.current;
+    if (root === null) return;
+    const focusable = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement;
+    if (e.shiftKey ? active === first : active === last) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -260,9 +317,11 @@ function CaseDrawer({ testCase, onClose }: { testCase: TestCase; onClose: () => 
         aria-hidden
       />
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        onKeyDown={trapTab}
         className="absolute inset-y-0 right-0 flex w-full min-w-0 flex-col border-l border-line bg-surface shadow-2xl sm:max-w-xl"
       >
         <header className="flex min-w-0 items-start gap-3 border-b border-line px-4 py-3">
