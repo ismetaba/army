@@ -50,9 +50,9 @@ import {
  * the four entries § 05 specifies while the form keeps every field the config has.
  */
 
-/** T21 step 4, verbatim. Shown on any provider row set to `claude-cli`. */
-const CLAUDE_CLI_WARNING =
-  "claude-cli works only via the .claude/ native path — CLI runs will refuse it.";
+/** Shown on any provider row set to `claude-cli` — a note about how it authenticates, not a refusal. */
+const CLAUDE_CLI_NOTE =
+  "runs on your local Claude Code login — no API key. Model is a CLI alias: opus, sonnet or haiku.";
 
 interface AgentRow {
   provider: string;
@@ -286,7 +286,8 @@ export function ConfigForm({
   const inheritModel = state.defaultsModel.trim() || "default";
 
   /** Agent rows set to a provider the CLI's tool-using workflows refuse — SAVE is blocked. */
-  const claudeCliAgents = AGENT_NAMES.filter((n) => state.agents[n]?.provider === "claude-cli");
+  // No longer a blocker: the MCP bridge (src/providers/claude-cli.ts) runs the workflows on the
+  // local Claude login, so a row set to claude-cli saves like any other provider.
 
   return (
     // `noValidate`: the browser's own constraint validation must not get a vote here. With it on,
@@ -309,7 +310,6 @@ export function ConfigForm({
               value={state.defaultsProvider}
               onChange={(v) => set("defaultsProvider", v)}
               options={PROVIDER_IDS}
-              danger={state.defaultsProvider === "claude-cli"}
               invalid={issueFor("defaults.provider") !== undefined}
             />
           </SettingsField>
@@ -324,7 +324,7 @@ export function ConfigForm({
             />
           </SettingsField>
         </div>
-        {state.defaultsProvider === "claude-cli" ? <ClaudeCliWarning /> : null}
+        {state.defaultsProvider === "claude-cli" ? <ClaudeCliNote /> : null}
       </SettingsSection>
 
       <SettingsSection
@@ -335,7 +335,7 @@ export function ConfigForm({
         <div className="flex min-w-0 flex-col gap-4">
           {AGENT_NAMES.map((name) => {
             const row = state.agents[name] ?? { provider: "", model: "" };
-            const isClaudeCli = row.provider === "claude-cli";
+            const isLocalLogin = row.provider === "claude-cli";
             const providerIssue = issueFor(`agents.${name}.provider`);
             const modelIssue = issueFor(`agents.${name}.model`);
             return (
@@ -354,7 +354,6 @@ export function ConfigForm({
                       onChange={(v) => setAgent(name, "provider", v)}
                       options={PROVIDER_IDS}
                       inheritLabel={`inherit (${inheritProvider})`}
-                      danger={isClaudeCli}
                       invalid={providerIssue !== undefined}
                     />
                     {providerIssue === undefined ? null : (
@@ -368,7 +367,6 @@ export function ConfigForm({
                       value={row.model}
                       onChange={(v) => setAgent(name, "model", v)}
                       placeholder={`inherit (${inheritModel})`}
-                      danger={isClaudeCli}
                       invalid={modelIssue !== undefined}
                     />
                     {modelIssue === undefined ? null : (
@@ -376,7 +374,7 @@ export function ConfigForm({
                     )}
                   </div>
                 </div>
-                {isClaudeCli ? <ClaudeCliWarning /> : null}
+                {isLocalLogin ? <ClaudeCliNote /> : null}
               </div>
             );
           })}
@@ -558,18 +556,9 @@ export function ConfigForm({
 
       <div className="flex min-w-0 flex-col gap-3 border-t border-line pt-5">
         <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3">
-          {/* Handoff § Empty & error states: "claude-cli on a CLI agent | inline danger callout in
-              settings, save blocked for that row". The route refuses it too (`configRuleIssues`) —
-              that is where the rule actually lives, since the CLI is what refuses the provider.
-              This only spares the round trip and puts the reason where the reader is looking. */}
           <PrimaryButton
             type="submit"
-            disabled={status.kind === "saving" || claudeCliAgents.length > 0}
-            title={
-              claudeCliAgents.length === 0
-                ? undefined
-                : `${claudeCliAgents.join(", ")} cannot run on claude-cli`
-            }
+            disabled={status.kind === "saving"}
             className={ACTION}
           >
             {status.kind === "saving" ? "saving…" : "save"}
@@ -615,6 +604,10 @@ export function ConfigForm({
   );
 }
 
-function ClaudeCliWarning() {
-  return <DangerCallout testId="claude-cli-warning">{CLAUDE_CLI_WARNING}</DangerCallout>;
+function ClaudeCliNote() {
+  return (
+    <p data-testid="claude-cli-warning" className="mono text-[9.5px] text-ink-3">
+      {CLAUDE_CLI_NOTE}
+    </p>
+  );
 }

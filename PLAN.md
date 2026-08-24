@@ -76,9 +76,12 @@ design/test runs end by presenting artifact paths, then **stop for feedback**.
 
 ## Known risks (from prior local experience)
 
-1. `ai-sdk-provider-claude-code` does **not** support AI SDK `tool({execute})` → in the CLI,
-   tool-heavy runs on the Claude side should use the `anthropic` API provider; `claude-cli` is
-   for the native Claude Code path or structured-output-only steps.
+1. ~~`ai-sdk-provider-claude-code` does not support AI SDK `tool({execute})`~~ — **resolved
+   2026-08-24.** It still cannot take `tools` directly, but `src/providers/claude-cli.ts`
+   bridges the workflow's toolset into the CLI as an in-process MCP server, so `claude-cli`
+   runs all three workflows on the developer's Claude subscription with no API key. The
+   lockdown that makes it safe (`disallowedTools`, not `allowedTools`) is in SPEC § Agent
+   session loop and measured in the module header.
 2. Headless `claude -p` previously returned "Not logged in" on this machine (Keychain not
    reaching spawned process) — verify in T12; fallback is the `anthropic` provider.
 3. Small local models can be weak at tool-calling — pick a tool-capable model in LM Studio

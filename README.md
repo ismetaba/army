@@ -13,7 +13,10 @@ Each workflow is backed by a dedicated agent whose **LLM provider is selectable*
 - `lmstudio` — local model via LM Studio's OpenAI-compatible API (`http://localhost:1234/v1`, no key)
 - `openai` — ChatGPT models via OpenAI SDK (`OPENAI_API_KEY`)
 - `anthropic` — Claude models via API (`ANTHROPIC_API_KEY`)
-- `claude-cli` — the local Claude Code session (no key; see caveats in PLAN.md)
+- `claude-cli` — the developer's local Claude Code login (no API key — it bills against their
+  Claude subscription). The workflow's toolset is bridged into the CLI over MCP and Claude
+  Code's own built-in tools are removed, so the agent's permission profile still bounds it.
+  Model is a CLI alias: `opus`, `sonnet`, `haiku`.
 
 Two run paths, one set of agent prompts (`agents/*.md`):
 

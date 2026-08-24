@@ -239,9 +239,23 @@ GUARDRAILS (non-negotiable):
 Use AI SDK: `generateText({ model, system, prompt, tools, stopWhen: stepCountIs(N) })`
 (if the installed AI SDK version lacks `stopWhen`, use `maxSteps: N`). `tools` comes from
 the permission profile. Log every tool call and result (truncated to 2 KB) to stderr and,
-after T16, to the run's `log.txt`. Known limitation: provider `claude-cli` does not execute
-AI SDK tools — workflows must refuse `claude-cli` with a clear error pointing to
-`anthropic` or the Claude Code native path (`.claude/` commands).
+after T16, to the run's `log.txt`.
+
+**`claude-cli` (amended 2026-08-24 — supersedes the refusal rule).** The provider still cannot
+receive AI SDK tools directly (a provider sees only tool *declarations*; `execute` lives in the
+`ai` layer). It is no longer refused: `src/providers/claude-cli.ts` bridges the workflow's
+toolset into the CLI as an in-process MCP server, so a workflow runs on the developer's local
+Claude Code login with no API key. Two rules that session must keep:
+
+1. **The bridged toolset is the whole capability surface.** Claude Code's own tools are removed
+   with `disallowedTools` (`BUILTIN_TOOLS`). `allowedTools` does NOT do this — it only
+   auto-approves — and `canUseTool` is not consulted for calls the CLI auto-approves, so
+   neither can be the primary gate. `settingSources` is pinned empty so the repository under
+   review cannot widen its own reviewer's permissions. Every measurement behind this is in the
+   module header; a built-in missing from the list is a granted capability.
+2. **The CLI owns the loop.** Tools travel inside the model and `maxTurns` is the step ceiling,
+   so the session must not pass `tools`/`stopWhen` to `generateText`. `sessionModel()` in
+   `src/workflows/common.ts` is the one place that decides this, for all three workflows.
 
 ## Dashboard security invariants (architect, 2026-08-22)
 

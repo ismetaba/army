@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { createOpenAI, openai } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
+import { claudeCode } from 'ai-sdk-provider-claude-code';
 import type { ProviderId } from '../../shared/schemas';
-import { CLAUDE_CLI_REFUSAL } from '../workflows/common';
 
 function requireEnv(name: string): void {
   if (!process.env[name]) throw new Error(`${name} is not set (add it to .env)`);
@@ -24,12 +24,12 @@ export function getModel(provider: ProviderId, modelId: string) {
     case 'openai': requireEnv('OPENAI_API_KEY'); return openai(modelId);
     case 'anthropic': requireEnv('ANTHROPIC_API_KEY'); return anthropic(modelId);
     case 'claude-cli': {
-      // Import lazily; check the package README/types for the exact factory export
-      // (expected: `claudeCode`). No API key needed — uses the local Claude Code login.
-      // One wording, shared with the three workflows (src/workflows/common.ts): the refusal is a
-      // user-facing contract and a second sentence for the same condition is exactly the drift
-      // that constant exists to prevent.
-      throw new Error(`${CLAUDE_CLI_REFUSAL}\n  (ping may still implement it: see T04)`);
+      // The developer's local Claude Code login (their subscription) — no API key. This plain
+      // model is for tool-less calls; tool-using sessions must go through
+      // `claudeCliSessionModel` (./claude-cli.ts), which bridges the toolset over MCP and
+      // locks out the CLI's own built-in tools. Passing AI SDK `tools` to THIS model does
+      // nothing: the provider ignores them with a warning (measured, tasks/T01.md).
+      return claudeCode(modelId);
     }
   }
 }

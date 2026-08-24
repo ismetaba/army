@@ -72,11 +72,11 @@ export const PROVIDERS = ["lmstudio", "openai", "anthropic", "claude-cli"] as co
   readonly RunManifest["provider"][];
 
 /**
- * `claude-cli` is offered in the select but flagged: the workflows refuse it (SPEC § Agent session
- * loop — it does not execute AI SDK tools). Showing it with the reason is more useful than hiding
- * it and letting someone wonder why the panel disagrees with `aw.config.json`.
+ * `claude-cli` needs a word in the slip, but not a warning any more: it runs the workflow on the
+ * developer's local Claude Code login instead of an API key (`src/providers/claude-cli.ts` bridges
+ * the toolset over MCP), so the note says what is different about it rather than refusing it.
  */
-export const REFUSED_PROVIDER = "claude-cli";
+export const LOCAL_LOGIN_PROVIDER = "claude-cli";
 
 export type FieldKind =
   /** One line of free text: no line breaks, no control characters. */

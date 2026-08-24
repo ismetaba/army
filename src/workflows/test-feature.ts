@@ -7,13 +7,12 @@ import { TestCase } from '../../shared/schemas';
 import type { AwConfig, ProviderId, Severity } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
-import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
 import { closeBrowser, makeBrowserTools } from '../tools/browser';
 import { ensureUp, isLocalUrl, probeUrl, slugify, type EnsureUpHandle } from '../util';
 import { startRun, type RunHandle } from '../store';
 import {
-  CLAUDE_CLI_REFUSAL,
+  sessionModel,
   clean,
   describeModelFailure,
   fail,
@@ -26,9 +25,6 @@ import {
   write,
 } from './common';
 
-// The `claude-cli` refusal is one shared constant (src/workflows/common.ts); re-exported here
-// so importers of this workflow keep seeing it where it has always been.
-export { CLAUDE_CLI_REFUSAL };
 
 export interface TestFeatureOptions {
   desc: string;
@@ -1204,9 +1200,7 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
   // Checked on the raw flag *before* resolveModel: `--provider claude-cli` without `--model`
   // resolves to "model required: ..." (SPEC § Model resolution), which would mask the real
   // reason the provider is unusable here.
-  if (opts.provider?.trim() === 'claude-cli') fail(CLAUDE_CLI_REFUSAL);
   const { provider, model } = resolveModel('qa-tester', opts, cfg);
-  if (provider === 'claude-cli') fail(CLAUDE_CLI_REFUSAL);
 
   const repoRoot = cfg.repoRoot;
   if (!fs.existsSync(repoRoot)) fail(`repoRoot does not exist: ${repoRoot}`);
@@ -1404,12 +1398,19 @@ async function testFeatureSession(ctx: {
     const evidence: string[] = [];
     let result: Awaited<ReturnType<typeof generateText>>;
     try {
+      const session = sessionModel(provider, model, { tools, cwd: repoRoot, maxSteps: MAX_STEPS });
       result = await generateText({
-        model: getModel(provider, model),
+        model: session.model,
         system: agent.system,
         prompt: text,
-        tools: withTools ? tools : undefined,
-        stopWhen: withTools ? [stepCountIs(MAX_STEPS), isLooping] : stepCountIs(1),
+        // claude-cli carries the tools inside the model and runs its own loop; only pass
+        // `tools`/`stopWhen` for the API providers, and only when this call uses tools.
+        ...(session.viaCli
+          ? {}
+          : {
+              tools: withTools ? tools : undefined,
+              stopWhen: withTools ? [stepCountIs(MAX_STEPS), isLooping] : stepCountIs(1),
+            }),
         maxRetries: 1,
         abortSignal: AbortSignal.timeout(timeoutMs()),
         onStepEnd: (step) => {
@@ -1426,7 +1427,7 @@ async function testFeatureSession(ctx: {
         },
       });
     } catch (err) {
-      // getModel() throws here for a missing API key; the SDK throws for transport failures.
+      // sessionModel()/getModel() throws for a missing API key; the SDK throws for transport failures.
       return bail(
         describeModelFailure(err, provider, { activity: 'the test run', timeoutMs: timeoutMs() }),
       );

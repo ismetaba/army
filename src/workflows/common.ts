@@ -1,4 +1,8 @@
 import fs from 'node:fs';
+import type { LanguageModel, ToolSet } from 'ai';
+import type { ProviderId } from '../../shared/schemas';
+import { getModel } from '../providers';
+import { claudeCliSessionModel } from '../providers/claude-cli';
 import { noteRunFailure } from '../store';
 
 /**
@@ -15,13 +19,32 @@ import { noteRunFailure } from '../store';
 export const LOG_CAP = 2 * 1024;
 
 /**
- * SPEC § Agent session loop — `claude-cli` silently ignores AI SDK tools, so every tool-using
- * workflow refuses it up front. One declaration: the wording is a user-facing contract and the
- * three commands must not be able to drift apart.
+ * SPEC § Agent session loop (amended 2026-08-22) — `claude-cli` runs tool-using sessions
+ * through the MCP bridge in `src/providers/claude-cli.ts`. One shared resolver so the three
+ * workflows cannot drift apart on how the two session shapes differ:
+ *
+ *   - API providers: our loop — pass `tools` and `stopWhen` to `generateText`.
+ *   - claude-cli: the CLI's loop — tools travel inside the model via MCP, `maxTurns` is the
+ *     step ceiling, and `tools`/`stopWhen` must NOT be passed (the provider would ignore the
+ *     tools with a warning and the extra declarations would only confuse the session).
  */
-export const CLAUDE_CLI_REFUSAL =
-  'provider "claude-cli" cannot run tool-using workflows: it does not execute AI SDK tools.\n' +
-  '  Use --provider anthropic (set ANTHROPIC_API_KEY), or the Claude Code native path (.claude/ commands).';
+export function sessionModel(
+  provider: ProviderId,
+  modelId: string,
+  opts: { tools: ToolSet; cwd: string; maxSteps: number },
+): { model: LanguageModel; viaCli: boolean } {
+  if (provider === 'claude-cli') {
+    return {
+      model: claudeCliSessionModel(modelId, {
+        tools: opts.tools,
+        cwd: opts.cwd,
+        maxTurns: opts.maxSteps,
+      }),
+      viaCli: true,
+    };
+  }
+  return { model: getModel(provider, modelId), viaCli: false };
+}
 
 /**
  * T16: where a copy of everything a workflow prints also goes — the run's `log.txt`.

@@ -5,11 +5,10 @@ import { generateText, stepCountIs } from 'ai';
 import type { Finding, ProviderId, Severity, Verdict } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
-import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
 import { startRun, type RunHandle } from '../store';
 import {
-  CLAUDE_CLI_REFUSAL,
+  sessionModel,
   describeModelFailure,
   fail,
   formatArgs,
@@ -21,9 +20,6 @@ import {
   write,
 } from './common';
 
-// The `claude-cli` refusal is one shared constant (src/workflows/common.ts); re-exported here
-// so importers of this workflow keep seeing it where it has always been.
-export { CLAUDE_CLI_REFUSAL };
 
 const execFileAsync = promisify(execFileCb);
 
@@ -552,9 +548,7 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
   // Checked on the raw flag *before* resolveModel: `--provider claude-cli` without `--model`
   // resolves to "model required: ..." (SPEC § Model resolution), which would mask the real
   // reason the provider is unusable here. Refused before any diff, model call or cost.
-  if (opts.provider?.trim() === 'claude-cli') fail(CLAUDE_CLI_REFUSAL);
   const { provider, model } = resolveModel('code-reviewer', opts, cfg);
-  if (provider === 'claude-cli') fail(CLAUDE_CLI_REFUSAL);
 
   const repoRoot = cfg.repoRoot;
   if (!fs.existsSync(repoRoot)) fail(`repoRoot does not exist: ${repoRoot}`);
@@ -705,12 +699,14 @@ async function reviewSession(ctx: {
   ): Promise<{ ok: true; text: string } | { ok: false; err: unknown }> => {
     let result: Awaited<ReturnType<typeof generateText>>;
     try {
+      const session = sessionModel(provider, model, { tools, cwd: repoRoot, maxSteps: MAX_STEPS });
       result = await generateText({
-        model: getModel(provider, model),
+        model: session.model,
         system: agent.system,
         prompt: text,
-        tools,
-        stopWhen: stepCountIs(MAX_STEPS),
+        // claude-cli runs its own loop with the tools bridged into the model; the API
+        // providers use our loop, so only they take `tools`/`stopWhen` here.
+        ...(session.viaCli ? {} : { tools, stopWhen: stepCountIs(MAX_STEPS) }),
         maxRetries: 1,
         abortSignal: AbortSignal.timeout(timeoutMs()),
         onStepEnd: (step) => {
@@ -723,7 +719,7 @@ async function reviewSession(ctx: {
         },
       });
     } catch (err) {
-      // getModel() throws here for a missing API key; the SDK throws for transport failures.
+      // sessionModel()/getModel() throws for a missing API key; the SDK throws for transport failures.
       return { ok: false, err };
     }
     log(`model finished in ${result.steps.length} step(s)`);

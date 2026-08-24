@@ -32,7 +32,7 @@ import {
   emptyArgs,
   fieldsFor,
   PROVIDERS,
-  REFUSED_PROVIDER,
+  LOCAL_LOGIN_PROVIDER,
 } from "@/lib/trigger-args";
 import { kindMeta, type RunKind } from "./model";
 
@@ -577,11 +577,11 @@ function ProviderField({
           </option>
         ))}
       </select>
-      {/* Offered rather than hidden, with the CLI's own reason attached: a config that names
-          claude-cli must not make the panel look like it disagrees for no stated cause. */}
-      {value === REFUSED_PROVIDER ? (
-        <p data-slip-claude-cli className="mono text-[9.5px] text-danger">
-          claude-cli works only via the .claude/ native path — CLI runs will refuse it.
+      {/* Not a warning — a fact worth stating, because this is the one provider that needs no
+          API key and bills against the developer's Claude subscription instead. */}
+      {value === LOCAL_LOGIN_PROVIDER ? (
+        <p data-slip-claude-cli className="mono text-[9.5px] text-ink-3">
+          runs on your local Claude Code login — no API key; model is a CLI alias (opus / sonnet).
         </p>
       ) : null}
     </FieldFrame>

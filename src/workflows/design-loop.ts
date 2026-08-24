@@ -7,7 +7,6 @@ import type { ToolSet } from 'ai';
 import type { AwConfig, ProviderId, ScreenShot } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
-import { getModel } from '../providers/index';
 import { makeCoreTools } from '../tools/core';
 import {
   VIDEO_FILE,
@@ -19,7 +18,7 @@ import {
 import { ensureUp, slugify, type EnsureUpHandle } from '../util';
 import { listRuns, startRun, type RunHandle } from '../store';
 import {
-  CLAUDE_CLI_REFUSAL,
+  sessionModel,
   clean,
   describeModelFailure,
   fail,
@@ -35,9 +34,6 @@ import {
 // re-issues one tool call until the step budget is gone), so it is reused, not re-implemented.
 import { isLooping } from './test-feature';
 
-// The `claude-cli` refusal is one shared constant (src/workflows/common.ts); re-exported here
-// so importers of this workflow keep seeing it where it has always been.
-export { CLAUDE_CLI_REFUSAL };
 
 const execFileAsync = promisify(execFileCb);
 
@@ -651,9 +647,7 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
   // Checked on the raw flag *before* resolveModel: `--provider claude-cli` without `--model`
   // resolves to "model required: ..." (SPEC § Model resolution), which would mask the real
   // reason the provider is unusable here.
-  if (opts.provider?.trim() === 'claude-cli') fail(CLAUDE_CLI_REFUSAL);
   const { provider, model } = resolveModel('ui-designer', opts, cfg);
-  if (provider === 'claude-cli') fail(CLAUDE_CLI_REFUSAL);
 
   const repoRoot = cfg.repoRoot;
   if (!fs.existsSync(repoRoot)) fail(`repoRoot does not exist: ${repoRoot}`);
@@ -921,12 +915,23 @@ async function designSession(ctx: {
   ): Promise<{ text: string; steps: number }> => {
     let result: Awaited<ReturnType<typeof generateText>>;
     try {
+      const session = sessionModel(provider, model, {
+        tools: withTools ?? {},
+        cwd: repoRoot,
+        maxSteps,
+      });
       result = await generateText({
-        model: getModel(provider, model),
+        model: session.model,
         system: agent.system,
         prompt,
-        tools: withTools,
-        stopWhen: withTools ? [stepCountIs(maxSteps), isLooping] : stepCountIs(1),
+        // claude-cli runs its own loop with tools bridged into the model; the API providers
+        // take our `tools`/`stopWhen`.
+        ...(session.viaCli
+          ? {}
+          : {
+              tools: withTools,
+              stopWhen: withTools ? [stepCountIs(maxSteps), isLooping] : stepCountIs(1),
+            }),
         maxRetries: 1,
         abortSignal: AbortSignal.timeout(limitMs),
         onStepEnd: (step) => {
@@ -939,7 +944,7 @@ async function designSession(ctx: {
         },
       });
     } catch (err) {
-      // getModel() throws here for a missing API key; the SDK throws for transport failures.
+      // sessionModel()/getModel() throws for a missing API key; the SDK throws for transport failures.
       // bail() stops Chromium and every dev server this run started before exiting.
       return bail(
         describeModelFailure(err, provider, {
