@@ -7,7 +7,7 @@ import {
   readLogTail,
   workspaceExists,
 } from "@/lib/store";
-import { listActiveRuns } from "@/lib/runner";
+import { listActiveRuns, listTriggeredRuns } from "@/lib/runner";
 import { LedgerTable } from "@/components/ledger-view/ledger-table";
 import { LiveAnnounce, LiveMargin } from "@/components/ledger-view/live-margin";
 import { LiveRunProvider } from "@/components/ledger-view/live-run";
@@ -15,7 +15,14 @@ import { MobileLedger } from "@/components/ledger-view/mobile-ledger";
 import { StartTask } from "@/components/ledger-view/start-task";
 import { TaskLauncherProvider } from "@/components/ledger-view/task-launcher";
 import { TopBar } from "@/components/ledger-view/top-bar";
-import { KINDS, toLedgerRow, weekSummary, type LedgerRow, type RunKind } from "@/components/ledger-view/model";
+import {
+  failedLaunchRow,
+  KINDS,
+  toLedgerRow,
+  weekSummary,
+  type LedgerRow,
+  type RunKind,
+} from "@/components/ledger-view/model";
 import { probeBackend, workspaceFacts } from "@/components/ledger-view/workspace-config";
 
 /**
@@ -82,7 +89,19 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
     if (active.runId !== null) pids.set(active.runId, active.pid);
   }
 
-  const activeRows = listRuns(ws).map((m) => toLedgerRow(m, pids.get(m.runId) ?? null));
+  /*
+   * Runs this panel started that never got as far as a manifest. They are only in the runner's
+   * own map (and in `pending/<pid>.log`), so they have to be merged in here or they are invisible
+   * — see `failedLaunchRow`. Filed by start time like everything else.
+   */
+  const failedLaunches = listTriggeredRuns(ws)
+    .filter((r) => r.state === "exited" && r.runId === null && r.exitCode !== 0)
+    .map(failedLaunchRow);
+
+  const activeRows = [
+    ...listRuns(ws).map((m) => toLedgerRow(m, pids.get(m.runId) ?? null)),
+    ...failedLaunches,
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const archivedRows = listArchivedRuns(ws).map((m) => toLedgerRow(m));
   const area = archived ? archivedRows : activeRows;
 

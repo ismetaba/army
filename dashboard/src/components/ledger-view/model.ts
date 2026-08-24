@@ -52,6 +52,49 @@ export interface LedgerRow {
   pid: number | null;
 }
 
+/**
+ * A run the panel started that died BEFORE the CLI announced a run id — a refused provider, a
+ * missing frontend URL, an unreadable config, a crash in the prelude.
+ *
+ * There is no manifest for these (the CLI exits before `startRun` creates one), so without this
+ * they were invisible: the trigger answered 200, the ledger stayed exactly as it was, and the
+ * only record was a file under `pending/`. "Nothing happened" is the one thing the panel must
+ * never say when something did. The row carries the pid so WATCH can open the transcript, which
+ * is where the reason is.
+ */
+export function failedLaunchRow(run: {
+  pid: number;
+  kind: RunKind;
+  startedAt: string;
+  endedAt: string | null;
+  exitCode: number | null;
+  exitSignal: string | null;
+}): LedgerRow {
+  const started = new Date(run.startedAt).getTime();
+  const ended = run.endedAt === null ? null : new Date(run.endedAt).getTime();
+  return {
+    // Not a real run id — there is no run. It is the pid, so the row is stable and addressable.
+    runId: `pid ${run.pid}`,
+    kind: run.kind,
+    status: run.exitSignal === null ? "error" : "cancelled",
+    createdAt: run.startedAt,
+    durationMs: ended === null ? null : Math.max(0, ended - started),
+    provider: "—",
+    model: "—",
+    verdict: null,
+    findings: [],
+    findingFiles: 0,
+    passed: null,
+    total: null,
+    screens: null,
+    error:
+      run.exitSignal !== null
+        ? `stopped by ${run.exitSignal} before the run started`
+        : `exited ${run.exitCode ?? "?"} before the run started — open the log for the reason`,
+    pid: run.pid,
+  };
+}
+
 /** Flatten one manifest into the row the screen renders. Server-side; `pid` comes from the runner. */
 export function toLedgerRow(m: RunManifest, pid: number | null = null): LedgerRow {
   const findings = m.review?.findings ?? [];
