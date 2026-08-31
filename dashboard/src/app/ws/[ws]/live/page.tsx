@@ -115,14 +115,20 @@ function Watch({
   }
   if (tracked !== null) meta.push({ label: "pid", value: String(tracked.pid) });
   meta.push({ label: "created", value: shortWhen(startedAt) });
+  // A finished run without a manifest `durationMs` (a failed launch, a cancelled run) falls back
+  // to the tracked process's own start/end stamps — never to `<Elapsed running={false}>`, which
+  // renders wall-clock AGE and would read "duration 60m00s" an hour after a 2s crash.
+  const trackedMs =
+    tracked?.endedAt != null
+      ? Math.max(0, new Date(tracked.endedAt).getTime() - new Date(tracked.startedAt).getTime())
+      : null;
   meta.push({
     label: running ? "elapsed" : "duration",
-    value:
-      running || manifest?.durationMs === undefined ? (
-        <Elapsed startedAt={startedAt} running={running === true} />
-      ) : (
-        clock(manifest.durationMs)
-      ),
+    value: running ? (
+      <Elapsed startedAt={startedAt} running />
+    ) : (
+      clock(manifest?.durationMs ?? trackedMs)
+    ),
   });
 
   const command =

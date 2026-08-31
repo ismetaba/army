@@ -128,7 +128,9 @@ export function WorkspaceRegistry({
     }
   }
 
-  const renameTarget = newName.trim() === "" ? "<new-name>" : newName.trim();
+  // Quoted like every other interpolated value (the register command below does the same): a
+  // typed `my app` must stay ONE `--name` argument when pasted, not `--name my` plus a stray word.
+  const renameTarget = newName.trim() === "" ? "<new-name>" : shellQuote(newName.trim());
   const renameCommand =
     current?.repoRoot === null || current === null
       ? null

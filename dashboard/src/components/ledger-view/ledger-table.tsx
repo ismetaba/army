@@ -137,9 +137,10 @@ function Row({ ws, row, archived }: { ws: string; row: LedgerRow; archived: bool
       {/*
         Archived runs are not linked: `/ws/[ws]/run/[id]` reads `runs/` only, so a link to an
         archived run answers 404. Showing the id as plain text says "it is still here, just not
-        open" — RESTORE in the actions column is what brings it back.
+        open" — RESTORE in the actions column is what brings it back. A failed launch has no run
+        directory AT ALL (its "id" is a pid), so its cell is plain text for the same reason.
       */}
-      {archived ? (
+      {archived || row.launchFailed ? (
         <span title={row.runId} className="mono truncate text-[10.5px] tracking-[-0.05em] text-ink-2">
           {row.runId}
         </span>
@@ -179,13 +180,15 @@ function Row({ ws, row, archived }: { ws: string; row: LedgerRow; archived: bool
         {running ? <RunningClock startedAt={row.createdAt} /> : formatDur(row.durationMs)}
       </span>
 
-      {running ? (
+      {running || row.launchFailed ? (
+        // A failed launch's only artifact is its transcript, and Archive/Delete would 404 —
+        // so its actions cell is the link to the log where the failure reason lives.
         <Link
           href={watch}
           data-row-watch={row.runId}
           className="mono text-right text-[9.5px] tracking-[0.04em] text-accent transition-colors duration-[180ms] hover:text-accent-hover"
         >
-          WATCH
+          {running ? "WATCH" : "LOG"}
         </Link>
       ) : (
         <RowActions ws={ws} runId={row.runId} area={archived ? "archive" : "runs"} />

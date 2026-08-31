@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { machineText } from "@/lib/untrusted";
 import { artifactHref, readLogTail, readRun, resolveArtifact } from "@/lib/store";
 import type { RunManifest } from "@/lib/store";
 import { expectedRunMs } from "@/lib/run-pace";
@@ -96,9 +97,11 @@ export default async function RunPage({ params, searchParams }: PageProps<"/ws/[
         {run.error !== undefined && run.error !== "" ? (
           <div className="flex min-w-0 flex-col gap-1.5 border-l-4 border-danger bg-danger-tint px-5 py-4">
             <span className="colhead text-danger">error</span>
-            {/* Run content: text, wrapped, scrolling inside its own box if it is one long line. */}
+            {/* Run content: text, wrapped, scrolling inside its own box if it is one long line.
+                Scrubbed like `failureReason` does for the ledger row — the manifest's `error` is
+                agent-written, and a bidi override in it displays a message the bytes don't say. */}
             <pre className="mono min-w-0 overflow-x-auto text-[11px] leading-[1.7] break-words whitespace-pre-wrap text-danger-deep">
-              {run.error}
+              {machineText(run.error)}
             </pre>
           </div>
         ) : null}

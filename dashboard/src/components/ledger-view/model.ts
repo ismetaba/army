@@ -31,6 +31,13 @@ export interface LedgerRow {
   kind: RunKind;
   status: RunStatus;
   createdAt: string;
+  /**
+   * The TIME column's text, fixed on the SERVER at flatten time. Client components must render
+   * this rather than call `formatClock` themselves: the same-day test depends on "now", and a
+   * client render at hydration can disagree with the server's HTML (a page rendered at 23:59
+   * hydrating at 00:00) — a React hydration error over a timestamp.
+   */
+  createdLabel: string;
   durationMs: number | null;
   provider: string;
   model: string;
@@ -50,6 +57,12 @@ export interface LedgerRow {
    * finished run and for one started from a terminal — which is why WATCH falls back to `?run=`.
    */
   pid: number | null;
+  /**
+   * True for a `failedLaunchRow`: there is no run directory behind it, so its `runId` must not be
+   * linked to the task page (404), and Archive/Delete can never succeed — the transcript at
+   * `/live?pid=` is the only thing that exists for it.
+   */
+  launchFailed: boolean;
 }
 
 /**
@@ -78,6 +91,7 @@ export function failedLaunchRow(run: {
     kind: run.kind,
     status: run.exitSignal === null ? "error" : "cancelled",
     createdAt: run.startedAt,
+    createdLabel: formatClock(run.startedAt),
     durationMs: ended === null ? null : Math.max(0, ended - started),
     provider: "—",
     model: "—",
@@ -92,6 +106,7 @@ export function failedLaunchRow(run: {
         ? `stopped by ${run.exitSignal} before the run started`
         : `exited ${run.exitCode ?? "?"} before the run started — open the log for the reason`,
     pid: run.pid,
+    launchFailed: true,
   };
 }
 
@@ -104,6 +119,7 @@ export function toLedgerRow(m: RunManifest, pid: number | null = null): LedgerRo
     kind: m.kind,
     status: m.status,
     createdAt: m.createdAt,
+    createdLabel: formatClock(m.createdAt),
     durationMs: m.durationMs ?? null,
     provider: m.provider,
     model: m.model,
@@ -115,6 +131,7 @@ export function toLedgerRow(m: RunManifest, pid: number | null = null): LedgerRo
     screens: m.design ? m.design.screens.length : null,
     error: m.error ?? null,
     pid,
+    launchFailed: false,
   };
 }
 

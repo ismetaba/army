@@ -21,7 +21,6 @@ import { RunningClock } from "./running-clock";
 import { useTaskLauncher } from "./task-launcher";
 import {
   failureReason,
-  formatClock,
   formatDur,
   formatElapsed,
   kindMeta,
@@ -171,9 +170,9 @@ function RunBlock({ ws, row, archived }: { ws: string; row: LedgerRow; archived:
       className={`flex flex-col gap-[7px] border-b border-line px-4 py-1.5 ${running ? "bg-surface-2" : ""}`}
     >
       <div className="flex items-center justify-between gap-2.5">
-        {/* Not linked when archived, for the reason `ledger-table.tsx`'s `Row` spells out: the
-            task-detail route reads `runs/`, so an archived id would link to a 404. */}
-        {archived ? (
+        {/* Not linked when archived or when the launch failed, for the reason `ledger-table.tsx`'s
+            `Row` spells out: the task-detail route reads `runs/`, so both would link to a 404. */}
+        {archived || row.launchFailed ? (
           <span className="mono flex min-h-11 min-w-0 flex-1 items-center truncate text-[9.5px] tracking-[-0.04em] text-ink-2">
             {row.runId}
           </span>
@@ -192,7 +191,9 @@ function RunBlock({ ws, row, archived }: { ws: string; row: LedgerRow; archived:
       </div>
 
       <p className="mono truncate text-[9px] tracking-[-0.04em] text-ink-2">
-        {formatClock(row.createdAt)} ·{" "}
+        {/* `row.createdLabel`, not `formatClock(row.createdAt)`: this is a client component, and
+            the same-day test re-run at hydration can disagree with the server's HTML. */}
+        {row.createdLabel} ·{" "}
         {running ? <RunningClock startedAt={row.createdAt} /> : formatDur(row.durationMs)} ·{" "}
         {row.provider} / {row.model}
       </p>
@@ -204,12 +205,13 @@ function RunBlock({ ws, row, archived }: { ws: string; row: LedgerRow; archived:
         </p>
       )}
 
-      {running ? (
+      {running || row.launchFailed ? (
+        // A failed launch keeps the transcript link (its only artifact); ARCH/DEL would 404.
         <Link
           href={watch}
           className="mono flex min-h-11 items-center text-[8.5px] tracking-[0.04em] text-accent"
         >
-          WATCH · {kindMeta(row.kind).title.toUpperCase()}
+          {running ? "WATCH" : "LOG"} · {kindMeta(row.kind).title.toUpperCase()}
         </Link>
       ) : (
         <RowActions ws={ws} runId={row.runId} area={archived ? "archive" : "runs"} compact />

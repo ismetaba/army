@@ -125,11 +125,15 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             </DangerCallout>
           ) : null}
 
+          {/* Keyed by workspace: the switcher navigates client-side, and without a remount the
+              form's `useState(() => toFormState(config))` keeps workspace A's values while the
+              props already say B — Save would then write A's config into B's repo. */}
           {hasForm && read?.ok === true && config !== null && selected !== null ? (
-            <ConfigForm ws={selected} path={read.path} config={config} issues={issues} />
+            <ConfigForm key={selected} ws={selected} path={read.path} config={config} issues={issues} />
           ) : null}
 
           <WorkspaceRegistry
+            key={selected ?? "(none)"}
             current={currentRow}
             workspaces={rows}
             registryPath={path.join(awHome(), "workspaces.json")}

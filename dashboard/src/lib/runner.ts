@@ -415,7 +415,14 @@ function looksLikeCli(pid: number, ws: string): boolean {
   } catch {
     return false; // no `ps`, or the process vanished between the two calls
   }
-  return line.includes(`${path.sep}src${path.sep}cli.ts`) && line.includes(`--workspace ${ws}`);
+  // Whole-token match, not `includes`: `--workspace proj` must not accept `--workspace proj-2`.
+  // This guard exists for recycled pids, where a near-miss workspace name is exactly the kind of
+  // process that shows up ("." in a name is a regex any-char, hence the escape).
+  const escaped = ws.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    line.includes(`${path.sep}src${path.sep}cli.ts`) &&
+    new RegExp(`--workspace ${escaped}(?=\\s|$)`).test(line)
+  );
 }
 
 /**

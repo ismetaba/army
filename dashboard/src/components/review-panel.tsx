@@ -557,7 +557,7 @@ function DiffRows({ rows }: { rows: RowItem[] }) {
             key={row.key}
             className="mono col-span-2 bg-surface-2 px-2.5 py-1 text-[9.5px] whitespace-pre text-ink-3 select-none"
           >
-            {row.hunk.header}
+            {machineText(row.hunk.header)}
           </div>
         ) : (
           <Row key={row.key} line={row.line} />
@@ -584,7 +584,10 @@ function Row({ line }: { line: DiffLine }) {
         data-new-line={line.newNo ?? ""}
         className={`mono py-[3px] pr-2.5 text-[10px] whitespace-pre ${tint}`}
       >
-        {SIGN[line.type]} {line.text}
+        {/* Scrubbed like every other machine-written string: a bidi override in a diff line makes
+            the panel display a different statement than the one in the patch (Trojan Source) —
+            in the one view whose whole job is showing what changed. Tabs survive `machineText`. */}
+        {SIGN[line.type]} {machineText(line.text)}
         {line.partial ? (
           <span className="ml-2 bg-surface-2 px-1 text-ink-3"> … cut off by the diff budget</span>
         ) : null}

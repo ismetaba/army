@@ -84,12 +84,23 @@ interface Session {
 let browserPromise: Promise<Browser> | null = null;
 const sessions = new Map<BrowserViewport, Promise<Session>>();
 
+/**
+ * Chromium binary override, in the `AW_CLAUDE_BIN` mould: sandboxes and CI images often ship a
+ * system Chromium instead of the exact build this Playwright version would download. Unset — the
+ * default everywhere else — leaves Playwright resolving its own bundled browser.
+ */
+function chromiumExecutablePath(): string | undefined {
+  return process.env.AW_CHROMIUM_PATH?.trim() || undefined;
+}
+
 function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = chromium.launch({ headless: true }).catch((err: unknown) => {
-      browserPromise = null; // allow a later retry
-      throw err;
-    });
+    browserPromise = chromium
+      .launch({ headless: true, executablePath: chromiumExecutablePath() })
+      .catch((err: unknown) => {
+        browserPromise = null; // allow a later retry
+        throw err;
+      });
   }
   return browserPromise;
 }

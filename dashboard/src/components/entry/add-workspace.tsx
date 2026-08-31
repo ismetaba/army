@@ -208,8 +208,14 @@ export function AddWorkspace({
         ref={dialog}
         aria-label="Add workspace"
         onClose={() => setOpen(false)}
+        onCancel={(event) => {
+          // Esc while `create()` is in flight: the POST keeps going, the slip vanishes looking
+          // like a cancellation, and its error would render into an unmounted dialog. The Create
+          // button already disables itself; Esc and the backdrop follow the same rule.
+          if (busy) event.preventDefault();
+        }}
         onClick={(event) => {
-          if (event.target === dialog.current) closeSlip();
+          if (event.target === dialog.current && !busy) closeSlip();
         }}
         className="shadow-slip-right fixed top-0 right-0 bottom-0 left-auto m-0 h-dvh max-h-dvh w-[420px] max-w-full border-l border-rule-2 bg-drawer p-0 text-fg backdrop:bg-canvas backdrop:opacity-60"
       >

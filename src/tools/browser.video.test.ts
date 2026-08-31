@@ -20,6 +20,21 @@ const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },
 } as const;
 
+/**
+ * The same override `getBrowser` honours, resolved once for both launch sites in this file.
+ * Without it, machines whose Playwright cache holds a different Chromium revision (or none)
+ * would fail every test here on launch — with no usable binary at all the suite skips instead,
+ * the same posture diff.test.ts takes towards its optional seeded run.
+ */
+const CHROMIUM_PATH = process.env.AW_CHROMIUM_PATH?.trim() || undefined;
+const hasChromium = (() => {
+  try {
+    return fs.existsSync(CHROMIUM_PATH ?? chromium.executablePath());
+  } catch {
+    return false;
+  }
+})();
+
 /** A page with movement in it, so the recording is not one repeated still frame. */
 const PAGE = `<!doctype html><meta charset="utf-8"><title>t15</title>
 <style>body{margin:0;font:48px system-ui}div{padding:2rem}</style>
@@ -53,7 +68,7 @@ afterAll(async () => {
 async function playableSeconds(file: string): Promise<number> {
   const probe = path.join(path.dirname(file), 'aw-probe.html');
   fs.writeFileSync(probe, `<video id="v" preload="auto" src="${path.basename(file)}"></video>`);
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, executablePath: CHROMIUM_PATH });
   try {
     const page = await browser.newPage();
     await page.goto(`file://${probe}`);
@@ -74,7 +89,7 @@ async function playableSeconds(file: string): Promise<number> {
   }
 }
 
-describe('recordVideo (real chromium)', () => {
+describe.skipIf(!hasChromium)('recordVideo (real chromium)', () => {
   let dir = '';
   let files: string[] = [];
 

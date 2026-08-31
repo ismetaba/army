@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guardHost, guardMutation, hostnameOf, isAllowedHost } from "./api-guard";
+import { guardHost, guardMutation, hostnameOf, isAllowedHost, readJsonBody } from "./api-guard";
 
 /**
  * The DNS-rebinding gate.
@@ -135,5 +135,24 @@ describe("guardMutation", () => {
       guardMutation(request({ host: "127.0.0.1:4400", "content-type": "text/plain" }))?.status,
     ).toBe(415);
     expect(guardMutation(request({ host: "127.0.0.1:4400" }), false)).toBeNull();
+  });
+});
+
+describe("readJsonBody", () => {
+  const post = (body: string) =>
+    new Request("http://127.0.0.1:4400/api/config", { method: "POST", body, ...{ duplex: "half" } });
+
+  it("parses a normal JSON body and refuses a malformed or missing one", async () => {
+    expect(await readJsonBody(post('{"a":1}'))).toEqual({ a: 1 });
+    expect(await readJsonBody(post("{nope"))).toBeUndefined();
+    expect(
+      await readJsonBody(new Request("http://127.0.0.1:4400/api/config", { method: "POST" })),
+    ).toBeUndefined();
+  });
+
+  it("bounds the ACTUAL bytes, not the declared content-length", async () => {
+    // The default cap would need 64 KiB of fixture; a tiny explicit cap proves the same bound.
+    expect(await readJsonBody(post(`"${"x".repeat(100)}"`), 16)).toBeUndefined();
+    expect(await readJsonBody(post('"ok"'), 16)).toBe("ok");
   });
 });
