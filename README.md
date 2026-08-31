@@ -20,7 +20,7 @@ Each workflow is backed by a dedicated agent whose **LLM provider is selectable*
 
 Two run paths, one set of agent prompts (`agents/*.md`):
 
-1. **CLI** — `aw <workflow> --provider <p> --model <m>` (TypeScript, Vercel AI SDK v6, own tool loop with fs/bash/git/Playwright tools).
+1. **CLI** — `aw <workflow> --provider <p> --model <m>` (TypeScript, Vercel AI SDK v7, own tool loop with fs/bash/git/Playwright tools).
 2. **Claude Code native** — `/design-loop`, `/test-feature`, `/review` slash commands + subagents in `.claude/`, incl. headless `claude -p "/review"`.
 3. **Dashboard** (Phase 7) — localhost web panel: Bitbucket-like PR review with inline findings, test-report viewer, screenshot/video gallery with feedback loop, multi-workspace + per-agent provider/settings management, run triggering with live logs.
 

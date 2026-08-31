@@ -657,7 +657,9 @@ describe('writabilityProblem', () => {
     expect(writabilityProblem(path.join(root, 'nested', 'deep', 'new.txt'))).toBeUndefined();
   });
 
-  it('reports a read-only file', () => {
+  // root ignores file modes, so a 0444 file is still writable there and the check
+  // (correctly) reports no problem — the assertion only means something as a normal user.
+  it.skipIf(process.getuid?.() === 0)('reports a read-only file', () => {
     const file = path.join(root, 'ro.txt');
     fs.writeFileSync(file, 'x');
     fs.chmodSync(file, 0o444);
@@ -693,7 +695,9 @@ describe('aw init leaves the target untouched when a planned write cannot succee
     fs.chmodSync(path.join(repo, 'CLAUDE.md'), 0o444);
   }, 120_000);
 
-  it(
+  // Skipped as root for the same reason as the read-only writabilityProblem test above:
+  // root writes straight through a 0444 CLAUDE.md, so the planned failure never happens.
+  it.skipIf(process.getuid?.() === 0)(
     'fails during planning with "Nothing was written." and writes nothing at all',
     () => {
       const result = spawnSync(TSX, [CLI, 'init', '--yes', '--repo', repo, '--name', 'ro', '--model', 'm'], {

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 4400 -H 127.0.0.1",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "next": "16.3.2",

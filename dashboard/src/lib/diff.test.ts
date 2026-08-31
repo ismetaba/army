@@ -629,8 +629,14 @@ const seededPatch = path.join(SEEDED, "artifacts/diff.patch");
 const hasSeed = fs.existsSync(seededPatch);
 
 describe.skipIf(!hasSeed)("the seeded review run review-20260822-004504", () => {
-  const patch = fs.readFileSync(seededPatch, "utf8");
-  const manifest = JSON.parse(fs.readFileSync(path.join(SEEDED, "manifest.json"), "utf8")) as {
+  // A skipped describe still runs its body at collection time, so the reads must not
+  // assume the seed exists — without the guards the whole file errors on a fresh machine.
+  const patch = hasSeed ? fs.readFileSync(seededPatch, "utf8") : "";
+  const manifest = (
+    hasSeed
+      ? JSON.parse(fs.readFileSync(path.join(SEEDED, "manifest.json"), "utf8"))
+      : { review: { verdict: "", findings: [] } }
+  ) as {
     review: { verdict: string; findings: { file: string; line: number; title: string }[] };
   };
   const files = parseUnifiedDiff(patch);
