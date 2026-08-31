@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
-import { Archivo, Martian_Mono } from "next/font/google";
+import { Martian_Mono, Urbanist } from "next/font/google";
 import "./globals.css";
 
 /*
- * The Ledger design specifies two families (handoff § Type): Archivo for everything a human
+ * The Glass design specifies two families (handoff § Type): Urbanist for everything a human
  * wrote, Martian Mono for everything a machine wrote or addresses. `next/font/google` fetches
  * them at BUILD time and self-hosts the files, so the running panel still needs no network —
- * which is why the template's runtime <link> to fonts.googleapis.com is not used here. Both
+ * which is why the handoff's runtime <link> to fonts.googleapis.com is not used here. Both
  * declare a system fallback, so a build that could not reach Google still renders.
  */
-const archivo = Archivo({
+const urbanist = Urbanist({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-archivo",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-urbanist",
   display: "swap",
   fallback: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
 });
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`h-full antialiased ${archivo.variable} ${martian.variable}`}>
+    <html lang="en" className={`h-full antialiased ${urbanist.variable} ${martian.variable}`}>
       <body className="min-h-full bg-bg text-fg">{children}</body>
     </html>
   );

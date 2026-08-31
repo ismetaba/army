@@ -448,7 +448,7 @@ function ProgressRule({
 
   return (
     <div
-      className="relative h-[3px] w-full min-w-0 bg-line"
+      className="relative h-[6px] w-full min-w-0 overflow-hidden rounded-full bg-surface-2"
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}
@@ -460,13 +460,8 @@ function ProgressRule({
       }
     >
       <div
-        className="absolute top-0 left-0 h-[3px] bg-accent transition-[width] duration-[900ms] ease-linear motion-reduce:transition-none"
+        className="seep-bar absolute top-0 left-0 h-full rounded-full transition-[width] duration-[900ms] ease-linear motion-reduce:transition-none"
         style={{ width: percent }}
-      />
-      <div
-        className="absolute top-[-2.5px] h-[8px] w-[6px] bg-fg transition-[left] duration-[900ms] ease-linear motion-reduce:transition-none"
-        style={{ left: `calc(${percent} - 3px)` }}
-        aria-hidden
       />
     </div>
   );
@@ -585,7 +580,7 @@ export function FinishedBar({
           <Link
             href={resultHref}
             data-finished-open
-            className="btnlabel tap bg-accent px-5 py-[11px] text-bg transition-colors duration-[180ms] hover:bg-accent-hover"
+            className="btnlabel tap rounded-[13px] bg-accent px-5 py-[11px] text-accent-ink transition-all duration-[180ms] hover:-translate-y-px hover:bg-accent-hover hover:shadow-[0_14px_28px_-14px_#e8b04b]"
           >
             open result
           </Link>

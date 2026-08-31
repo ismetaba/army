@@ -22,26 +22,31 @@ import { SectionHead } from "@/components/ledger/chrome";
 
 export type UnderlineState = "empty" | "filled" | "danger";
 
-/** Written out in full so Tailwind's scanner sees every class it has to generate. */
+/**
+ * Glass fields are PLATES (`.field` in globals.css carries the geometry: plate fill, 1px soft
+ * border, radius 12). The per-state border/tint written out in full so Tailwind's scanner sees
+ * every class it has to generate. The names keep their historical "Underline" spelling — every
+ * call site would otherwise churn for a rename with no behaviour in it.
+ */
 const UNDERLINE: Record<UnderlineState, string> = {
-  empty: "border-b-line!",
-  filled: "border-b-fg!",
-  danger: "border-b-danger!",
+  empty: "",
+  filled: "",
+  danger: "border-danger-line! bg-danger-tint!",
 };
 
 /**
- * `.field` also fixes `color`, so the ink of a field is the same fight as its underline and needs
- * the same `!`. Without it every value renders in ink and the danger state is underline-only —
+ * `.field` also fixes `color`, so the ink of a field is the same fight as its border and needs
+ * the same `!`. Without it every value renders in ink and the danger state is border-only —
  * which is exactly the colour-alone signalling the handoff forbids.
  */
 const INK: Record<UnderlineState, string> = {
   empty: "text-muted!",
   filled: "text-fg!",
-  danger: "text-danger!",
+  danger: "text-danger-ink!",
 };
 
-/** The accent underline IS the focus signal for a field. */
-const FOCUS = "focus:border-b-accent!";
+/** The gold border IS the focus signal for a field (the ring comes from `.field:focus`). */
+const FOCUS = "focus:border-accent-line!";
 
 function stateOf(value: string, danger: boolean): UnderlineState {
   if (danger) return "danger";
@@ -189,7 +194,7 @@ export function UnderlineSelect({
       </select>
       <span
         aria-hidden
-        className={`pointer-events-none absolute right-0 bottom-[9px] text-[8px] leading-none ${
+        className={`pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-[8px] leading-none ${
           state === "danger" ? "text-danger" : "text-ink-3"
         }`}
       >
@@ -279,7 +284,7 @@ export function FieldError({ htmlFor, children }: { htmlFor: string; children: R
   );
 }
 
-/** The inline danger callout: 3px danger bar on `danger-tint`, hatched square, Archivo copy. */
+/** The inline danger callout: a coral-tinted pane with a coral border and the solid coral disc. */
 export function DangerCallout({
   children,
   testId,
@@ -293,34 +298,37 @@ export function DangerCallout({
     <div
       role={role}
       data-testid={testId}
-      className="flex min-w-0 items-start gap-2.5 border-l-[3px] border-danger bg-danger-tint px-3.5 py-3"
+      className="flex min-w-0 items-start gap-2.5 rounded-[14px] border border-danger-line bg-danger-tint px-4 py-3"
     >
       <span className="mark mark-error mt-[5px]" aria-hidden />
-      <div className="min-w-0 text-[12px] leading-[1.55] text-diff-del-ink">{children}</div>
+      <div className="min-w-0 text-[12px] leading-[1.55] text-danger-deep">{children}</div>
     </div>
   );
 }
 
 /**
- * One of the four ruled sections (handoff § 05). The 2px ink rule comes from `SectionHead`, which
- * every screen in the panel shares — this only adds the anchor the section index jumps to.
+ * One of the four section PANES (Glass § 05: radius 20, 24/26px padding, a title with a
+ * right-aligned mono hint). `raised` marks the first section, which sits on `pane-header` with
+ * the shadow; the rest are quiet panes. The id is the anchor the section nav jumps to.
  */
 export function SettingsSection({
   id,
   title,
   aside,
+  raised = false,
   children,
 }: {
   id: string;
   title: string;
   aside: string;
+  raised?: boolean;
   children: ReactNode;
 }) {
   return (
     <section
       id={id}
       aria-label={title}
-      className="flex min-w-0 scroll-mt-6 flex-col gap-5"
+      className={`flex min-w-0 scroll-mt-6 flex-col gap-5 px-6 py-6 ${raised ? "pane-head" : "pane-quiet rounded-[20px]!"}`}
       data-settings-section={id}
     >
       <SectionHead

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { notFound } from "next/navigation";
-import { AwConfig } from "@shared/schemas";
+import { migrateConfig, parseAwConfig } from "@shared/schemas";
 import { awHome, listWorkspaceSummaries, readConfigFile } from "@/lib/store";
 import { configRuleIssues, mergeIssues, toFieldIssues } from "@/lib/config-patch";
 import { BackLink } from "@/components/ledger/chrome";
@@ -69,11 +69,15 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const currentSummary = configurable.find((w) => w.name === selected) ?? null;
 
   const read = selected === null ? null : readConfigFile(selected);
-  const parsed = read?.ok === true ? AwConfig.safeParse(read.data) : null;
+  // T23: the form edits the TARGET shape, so a pre-T23 file is rendered in its migrated form
+  // (the same in-memory mapping the CLI applies; the file itself is not rewritten by a render).
+  const config =
+    read?.ok === true ? (migrateConfig(read.data) as Record<string, unknown>) : null;
+  const parsed = config !== null ? parseAwConfig(config) : null;
   const issues =
-    read?.ok === true
+    config !== null
       ? mergeIssues(
-          configRuleIssues(read.data),
+          configRuleIssues(config),
           parsed?.success === false ? toFieldIssues(parsed.error.issues) : [],
         )
       : [];
@@ -102,8 +106,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             {currentSummary?.repoRoot ?? awHome()}
           </span>
         </div>
-        {/* Where you are: the accent underline, the same mark the ledger tabs use. */}
-        <span className="btnlabel flex-none border-b-2 border-accent pb-[3px] text-fg">
+        {/* Where you are: the gold pill, the same mark the task tabs use (Glass § 05). */}
+        <span className="btnlabel flex-none rounded-[10px] bg-accent px-3 py-1.5 text-accent-ink">
           settings
         </span>
       </header>
@@ -121,8 +125,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             </DangerCallout>
           ) : null}
 
-          {hasForm && read?.ok === true && selected !== null ? (
-            <ConfigForm ws={selected} path={read.path} config={read.data} issues={issues} />
+          {hasForm && read?.ok === true && config !== null && selected !== null ? (
+            <ConfigForm ws={selected} path={read.path} config={config} issues={issues} />
           ) : null}
 
           <WorkspaceRegistry

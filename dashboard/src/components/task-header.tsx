@@ -65,25 +65,33 @@ export function shortWhen(iso: string): string {
 // top bar
 // ---------------------------------------------------------------------------
 
-/** `← LEDGER  <workspace>` on the left, `SETTINGS` on the right, 1px rule under (handoff § 04). */
+/** `← Panes` + the workspace pill on the left, `Settings` on the right (Glass § 04). */
 export function TaskTopBar({ ws }: { ws: string }) {
   return (
-    <header className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-10 py-4">
+    <header className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-chrome-rule bg-chrome-fill px-6 py-3 sm:px-8">
       <div className="flex min-w-0 items-center gap-4">
         <Link
           href={`/ws/${encodeURIComponent(ws)}`}
-          className="btnlabel tap shrink-0 text-ink-3 transition-colors duration-[180ms] hover:text-fg"
+          className="tap shrink-0 text-[12px] text-muted transition-colors duration-[180ms] hover:text-fg"
         >
-          ← ledger
+          ← Panes
         </Link>
         {/* The workspace name is a registry string, printed as text. */}
-        <span className="mono min-w-0 text-[11px] font-medium break-all">{ws}</span>
+        <span className="chip flex min-w-0 items-center gap-2 rounded-[20px]! px-2 py-1 pr-3">
+          <span
+            aria-hidden
+            className="flex size-[20px] flex-none items-center justify-center rounded-full border border-accent-line bg-accent-tint text-[8.5px] font-semibold text-accent"
+          >
+            {ws.slice(0, 2).toLowerCase()}
+          </span>
+          <span className="min-w-0 truncate text-[12px] font-semibold">{ws}</span>
+        </span>
       </div>
       <Link
-        href="/settings"
-        className="btnlabel tap shrink-0 text-ink-3 transition-colors duration-[180ms] hover:text-fg"
+        href={`/settings?ws=${encodeURIComponent(ws)}`}
+        className="tap shrink-0 text-[12px] text-muted transition-colors duration-[180ms] hover:text-fg"
       >
-        settings
+        Settings
       </Link>
     </header>
   );
@@ -130,57 +138,59 @@ export function TaskHeader({
   artifactsNote?: string;
   aside?: ReactNode;
 }) {
+  const live = status === "running";
   return (
-    <>
-      <div className="h-0.5 bg-fg" />
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-8 gap-y-4 border-b border-line py-5">
-        <div className="flex min-w-0 flex-1 basis-[420px] flex-col gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-            <h1 className="mono min-w-0 text-[15px] break-all">{runId}</h1>
-            <StatusMark status={status} />
-          </div>
-
-          <dl className="flex min-w-0 flex-wrap items-baseline gap-x-[26px] gap-y-2">
-            {meta.map((item) => (
-              <div key={item.label} className="flex min-w-0 items-baseline gap-2">
-                <dt className="colhead shrink-0">{item.label}</dt>
-                <dd className="mono min-w-0 text-[10px] break-all">{item.value}</dd>
-              </div>
-            ))}
-          </dl>
-
-          <CommandStrip command={command} className="min-w-0 max-w-[640px]" />
+    // Glass § 04 / 04d: the shared header PANE — `pane-head` normally, and the elevated
+    // `pane-live` (gold border, the big shadow) while the run is going.
+    <div
+      className={`${live ? "pane-live" : "pane-head"} flex min-w-0 flex-wrap items-start justify-between gap-x-8 gap-y-4 p-6 sm:px-7`}
+    >
+      <div className="flex min-w-0 flex-1 basis-[420px] flex-col gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+          <h1 className="mono min-w-0 text-[14.5px] tracking-[-0.05em] break-all">{runId}</h1>
+          <StatusMark status={status} />
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-3">
-          {aside}
-          <div className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-3.5 gap-y-1">
-            <span className="colhead shrink-0">artifacts</span>
-            {artifacts.length === 0 ? (
-              <span className="mono text-[10px] text-muted">{artifactsNote ?? "none"}</span>
-            ) : (
-              artifacts.map((a) =>
-                a.href === null ? (
-                  // The manifest names it, the store does not have it. A link would 404; saying so
-                  // is the whole message.
-                  <span key={a.label} className="mono text-[10px] text-muted" title="file missing">
-                    <span className="line-through">{a.label}</span> missing
-                  </span>
-                ) : (
-                  <a
-                    key={a.label}
-                    href={a.href}
-                    className="mono tap border-b border-accent text-[10px] text-accent transition-colors duration-[180ms] hover:border-accent-hover hover:text-accent-hover"
-                  >
-                    {a.label}
-                  </a>
-                ),
-              )
-            )}
-          </div>
+        <dl className="flex min-w-0 flex-wrap items-baseline gap-x-[26px] gap-y-2">
+          {meta.map((item) => (
+            <div key={item.label} className="flex min-w-0 flex-col gap-0.5">
+              <dt className="colhead shrink-0">{item.label}</dt>
+              <dd className="mono min-w-0 text-[10px] break-all text-ink-2">{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <CommandStrip command={command} className="min-w-0 max-w-[640px]" />
+      </div>
+
+      <div className="flex shrink-0 flex-col items-end gap-3">
+        {aside}
+        <div className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-3.5 gap-y-1">
+          <span className="colhead shrink-0">artifacts</span>
+          {artifacts.length === 0 ? (
+            <span className="mono text-[10px] text-ink-faint">{artifactsNote ?? "none"}</span>
+          ) : (
+            artifacts.map((a) =>
+              a.href === null ? (
+                // The manifest names it, the store does not have it. A link would 404; saying so
+                // is the whole message.
+                <span key={a.label} className="mono text-[10px] text-muted" title="file missing">
+                  <span className="line-through">{a.label}</span> missing
+                </span>
+              ) : (
+                <a
+                  key={a.label}
+                  href={a.href}
+                  className="mono tap border-b border-accent text-[10px] text-accent transition-colors duration-[180ms] hover:border-accent-hover hover:text-accent-hover"
+                >
+                  {a.label}
+                </a>
+              ),
+            )
+          )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -196,15 +206,14 @@ export interface TabItem {
   title?: string;
 }
 
-/** `RESULT · LOG`, the active one underlined 2px accent (handoff § 04). */
+/** `RESULT · LOG` — the active tab is a gold pill with dark text (Glass § 04). */
 export function TaskTabs({ items, active }: { items: TabItem[]; active: string }) {
   return (
-    <nav className="flex min-w-0 flex-wrap items-baseline gap-x-[22px] pt-3.5" aria-label="Task views">
+    <nav className="flex min-w-0 flex-wrap items-center gap-2 pt-4" aria-label="Task views">
       {items.map((item) => {
         const isActive = item.id === active;
-        // `items-end` so the 2px accent underline stays on the text baseline inside the 44px box.
-        const className = `btnlabel tap items-end pb-1.5 ${
-          isActive ? "border-b-2 border-accent text-fg" : "text-muted"
+        const className = `btnlabel tap rounded-[10px] px-3.5 py-1.5 ${
+          isActive ? "bg-accent text-accent-ink" : "text-muted"
         }`;
         if (item.href === null || isActive) {
           return (
@@ -223,7 +232,7 @@ export function TaskTabs({ items, active }: { items: TabItem[]; active: string }
           <Link
             key={item.id}
             href={item.href}
-            className={`${className} transition-colors duration-[180ms] hover:text-fg`}
+            className={`${className} transition-colors duration-[180ms] hover:bg-pane-quiet hover:text-fg`}
             style={TRACK_LABEL}
           >
             {item.label}
@@ -250,9 +259,9 @@ export function RuledHead({
 }) {
   return (
     <div
-      className={`flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b-2 border-fg pb-2.5 ${className}`}
+      className={`flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-rule-2 pb-2.5 ${className}`}
     >
-      <h2 className="min-w-0 text-[18px] font-semibold tracking-[-0.02em] break-words">{title}</h2>
+      <h2 className="min-w-0 text-[18px] font-semibold tracking-[-0.025em] break-words">{title}</h2>
       {aside}
     </div>
   );

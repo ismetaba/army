@@ -32,7 +32,7 @@ export function TopBar({
   backend: BackendHealth;
 }) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-x-[18px] gap-y-3 border-b border-line px-4 py-4 min-[900px]:px-10">
+    <header className="flex flex-wrap items-center justify-between gap-x-[18px] gap-y-3 border-b border-chrome-rule bg-chrome-fill px-4 py-3 min-[900px]:px-8">
       <div className="flex min-w-0 flex-wrap items-center gap-x-[18px] gap-y-2">
         <Switcher ws={ws} workspaces={workspaces} />
         <span className="mono hidden truncate text-[10px] tracking-[-0.03em] text-muted min-[900px]:inline">
@@ -41,18 +41,18 @@ export function TopBar({
         <BackendMark backend={backend} />
       </div>
 
-      <div className="flex items-center gap-[22px]">
+      <div className="flex items-center gap-[18px]">
         <Link
           href={`/settings?ws=${encodeURIComponent(ws)}`}
-          className="mono flex min-h-11 items-center text-[9.5px] tracking-[0.06em] text-ink-3 transition-colors duration-[180ms] hover:text-fg min-[900px]:min-h-0"
+          className="flex min-h-11 items-center text-[12px] text-muted transition-colors duration-[180ms] hover:text-fg min-[900px]:min-h-0"
         >
-          SETTINGS
+          Settings
         </Link>
         <Link
           href="/"
-          className="mono hidden min-h-11 items-center text-[9.5px] tracking-[0.06em] text-ink-3 transition-colors duration-[180ms] hover:text-fg min-[900px]:flex min-[900px]:min-h-0"
+          className="hidden min-h-11 items-center text-[12px] text-muted transition-colors duration-[180ms] hover:text-fg min-[900px]:flex min-[900px]:min-h-0"
         >
-          ← WORKSPACES
+          ← Workspaces
         </Link>
       </div>
     </header>
@@ -72,7 +72,7 @@ function BackendMark({ backend }: { backend: BackendHealth }) {
       data-backend={backend.up === null ? "none" : backend.up ? "up" : "down"}
       className="flex items-center gap-[7px] border-line pl-0 min-[900px]:border-l min-[900px]:pl-[18px]"
     >
-      <span aria-hidden className={`size-1.5 flex-none ${tone}`} />
+      <span aria-hidden className={`size-1.5 flex-none rounded-full ${tone}`} />
       <span
         className={`mono text-[9.5px] tracking-[-0.02em] ${backend.up === false ? "text-danger" : "text-ink-2"}`}
       >
@@ -105,23 +105,30 @@ function Switcher({ ws, workspaces }: { ws: string; workspaces: readonly Workspa
 
   return (
     <details ref={box} data-switcher className="relative">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-[9px] border border-fg px-2.5 py-1.5 [&::-webkit-details-marker]:hidden min-[900px]:min-h-0">
-        <span className="mono max-w-[220px] truncate text-[11px] font-medium tracking-[-0.02em]">{ws}</span>
-        <span aria-hidden className="text-[8px] text-ink-3">
+      {/* The switcher pill (Glass § 02): monogram + name + ▼ inside a `chip-fill` pill. */}
+      <summary className="chip flex min-h-11 cursor-pointer list-none items-center gap-[9px] rounded-[20px]! px-2 py-1 pr-3 [&::-webkit-details-marker]:hidden min-[900px]:min-h-0">
+        <span
+          aria-hidden
+          className="flex size-[22px] flex-none items-center justify-center rounded-full border border-accent-line bg-accent-tint text-[9px] font-semibold text-accent"
+        >
+          {ws.slice(0, 2).toLowerCase()}
+        </span>
+        <span className="max-w-[220px] truncate text-[12.5px] font-semibold tracking-[-0.01em]">{ws}</span>
+        <span aria-hidden className="text-[7px] text-ink-3">
           ▼
         </span>
       </summary>
       <nav
         aria-label="Switch workspace"
-        className="absolute top-full left-0 z-40 mt-1 flex min-w-[240px] flex-col border border-rule-2 bg-surface"
+        className="absolute top-full left-0 z-40 mt-1.5 flex min-w-[240px] flex-col overflow-hidden rounded-[14px] border border-rule-2 bg-drawer shadow-[0_24px_52px_-30px_#000]"
       >
         {workspaces.map((w) => (
           <Link
             key={w.name}
             href={`/ws/${encodeURIComponent(w.name)}`}
             aria-current={w.name === ws ? "page" : undefined}
-            className={`flex min-h-11 items-center justify-between gap-4 border-b border-line px-3 py-2.5 transition-colors duration-[180ms] last:border-b-0 hover:bg-paper-hover ${
-              w.name === ws ? "bg-surface-2" : ""
+            className={`flex min-h-11 items-center justify-between gap-4 border-b border-line px-3.5 py-2.5 transition-colors duration-[180ms] last:border-b-0 hover:bg-paper-hover ${
+              w.name === ws ? "bg-pane-raised" : ""
             }`}
           >
             <span className="mono truncate text-[11px] tracking-[-0.02em]">{w.name}</span>
@@ -132,7 +139,7 @@ function Switcher({ ws, workspaces }: { ws: string; workspaces: readonly Workspa
         ))}
         <Link
           href="/"
-          className="mono flex min-h-11 items-center border-t border-line px-3 py-2.5 text-[9.5px] tracking-[0.06em] text-accent transition-colors duration-[180ms] hover:bg-paper-hover"
+          className="mono flex min-h-11 items-center border-t border-line px-3.5 py-2.5 text-[9.5px] tracking-[0.06em] text-accent transition-colors duration-[180ms] hover:bg-paper-hover"
         >
           ← ALL WORKSPACES
         </Link>

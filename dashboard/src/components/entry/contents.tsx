@@ -1,124 +1,156 @@
 import Link from "next/link";
-import { Leader } from "@/components/ledger/chrome";
 import { formatAgo } from "@/lib/format";
 import { machineText } from "@/lib/untrusted";
 import { RunningChip } from "./running-chip";
 
 /*
- * The entry screen's table of contents (handoff § 01) — a numbered, ruled list, not a grid of
- * cards. Everything here is a SERVER component: the rows are static once rendered, and the one
- * moving part (the elapsed clock in the running chip) is the only thing that crosses to the client.
+ * The entry screen's workspace CARDS (Glass § 01) — a three-column grid of frosted panes, not a
+ * list. Everything here is a SERVER component: the cards are static once rendered, and the one
+ * moving part (the elapsed clock in the running chip) is the only thing that crosses to the
+ * client.
  *
- * Two notes on why the type helpers below are spelled `font-mono tracking-[…]` rather than the
- * foundation's `.mono`: the design gives each mono run its own tracking (-0.02em for the index,
- * -0.03em for paths and meta), and `.mono` — being unlayered CSS in globals.css — outranks every
- * Tailwind tracking utility no matter the class order. `.mono` is used elsewhere, where its
- * -0.045em is the value the design asks for.
- *
- * The row is one flex line at 1440 (index · name · dotted leader · meta · arrow) and stacks into
- * two lines below 640px. That is not decoration: an absolute repo path plus a 120px meta column
- * plus the running chip cannot share 375px, and the hard rule (§ Interactions) is that the PAGE
- * never scrolls sideways. The path truncates inside its own `min-w-0` box for the same reason.
+ * Three shapes, one component:
+ *  - ACTIVE  (a workspace with a running task) — `pane-live`: raised fill, gold border, the big
+ *    shadow; a blip dot + RUNNING clock and the striped bar.
+ *  - QUIET   — `pane-card`: big task count, `TASKS · 2D AGO`, a 5-bar sparkline of recent run
+ *    durations on the right.
+ *  - NEVER RUN — the quiet card with `0` in ink-4 and `—` where the sparkline would be.
  */
 
-/** One line of the contents list, already reduced to what the row draws. */
+/** One workspace, already reduced to what the card draws. */
 export interface EntryRow {
   name: string;
   /** Absolute repo path, or `null` for a run directory the registry has forgotten. */
   repoRoot: string | null;
+  /** T23: the frontend repo, when the workspace spans two repositories — a second path line. */
+  frontendRepo: string | null;
   taskCount: number;
   /** `createdAt` of the newest run, or `null` when the workspace has none. */
   lastRunAt: string | null;
-  /** `createdAt` of the newest RUNNING run, or `null` — drives the chip and the accent index. */
+  /** `createdAt` of the newest RUNNING run, or `null` — decides the card's shape. */
   runningSince: string | null;
+  /** Durations (ms) of the most recent finished runs, oldest first — the sparkline. */
+  durationsMs: number[];
   /**
    * False when the name is not a usable directory segment. Such a workspace has no page, so its
-   * row is rendered without a link rather than as one that is guaranteed to 404.
+   * card is rendered without a link rather than as one that is guaranteed to 404.
    */
   usable: boolean;
 }
 
-/** `1 task · 5m ago` · `7 tasks · 2d ago` · `no tasks` — the right-aligned meta of a row. */
-function metaOf(row: EntryRow): string {
-  if (!row.usable) return "unusable name";
-  if (row.taskCount === 0) return "no tasks";
-  const tasks = `${row.taskCount} ${row.taskCount === 1 ? "task" : "tasks"}`;
-  const ago = row.lastRunAt === null ? "" : formatAgo(row.lastRunAt);
-  return ago === "" ? tasks : `${tasks} · ${ago}`;
+/** The 32px circular monogram: the first two characters of the name on a tinted disc. */
+function Monogram({ name, active }: { name: string; active: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`flex size-8 flex-none items-center justify-center rounded-full border text-[11px] font-semibold ${
+        active
+          ? "border-accent-line bg-accent-tint text-accent"
+          : "border-rule-2 bg-chip-fill text-ink-2"
+      }`}
+    >
+      {name.slice(0, 2).toLowerCase()}
+    </span>
+  );
 }
 
-export function ContentsRow({ row, index }: { row: EntryRow; index: number }) {
+/** The 5-bar sparkline of recent run durations. Pure CSS bars; `—` when there is nothing. */
+function Sparkline({ durationsMs }: { durationsMs: number[] }) {
+  if (durationsMs.length === 0) return <span className="mono text-[11px] text-ink-faint">—</span>;
+  const recent = durationsMs.slice(-5);
+  const max = Math.max(...recent, 1);
+  return (
+    <span aria-hidden className="flex h-7 items-end gap-1">
+      {recent.map((ms, i) => (
+        <span
+          key={i}
+          style={{ height: `${Math.max(18, Math.round((ms / max) * 100))}%` }}
+          className="w-[5px] rounded-[2px] bg-rule-dotted"
+        />
+      ))}
+    </span>
+  );
+}
+
+export function ContentsRow({ row }: { row: EntryRow; index?: number }) {
   const running = row.runningSince !== null;
 
   const body = (
     <>
-      {/* index + name keep company on one line at every width; the leader and meta are what move. */}
-      <div className="flex min-w-0 items-baseline gap-5">
-        <span
-          aria-hidden
-          className={`w-[26px] flex-none font-mono text-[11px] tracking-[-0.02em] ${
-            running ? "text-accent" : "text-muted"
-          }`}
-        >
-          {String(index).padStart(2, "0")}
-        </span>
-
-        {/*
-          Explicit leading on both lines. The artboard sets each run with the `font:` shorthand,
-          which resets line-height to `normal`; inheriting the body's 1.6 instead adds ~18px to
-          every row and the list stops reading as a ruled ledger.
-        */}
-        <span className="flex min-w-0 flex-col gap-2">
-          <span className="min-w-0 truncate text-[24px] leading-[1.2] font-medium tracking-[-0.02em] text-fg">
+      <div className="flex min-w-0 items-start justify-between gap-4">
+        <span className="flex min-w-0 flex-col gap-1.5">
+          <span className="min-w-0 truncate text-[24px] leading-[1.15] font-bold tracking-[-0.035em] text-fg">
             {row.name}
           </span>
-          <span className="min-w-0 truncate font-mono text-[10.5px] leading-[1.3] tracking-[-0.03em] text-muted">
+          <span className="min-w-0 truncate font-mono text-[10px] leading-[1.4] tracking-[-0.03em] text-muted">
             {row.repoRoot === null ? "not in workspaces.json" : machineText(row.repoRoot)}
           </span>
+          {/* T23: the second repo of a two-repo workspace, on its own line under the first. */}
+          {row.frontendRepo !== null ? (
+            <span className="min-w-0 truncate font-mono text-[10px] leading-[1.4] tracking-[-0.03em] text-muted">
+              {machineText(row.frontendRepo)}
+            </span>
+          ) : null}
         </span>
+        <Monogram name={row.name} active={running} />
       </div>
 
-      {/* `contents` so the foundation's `.leader` stays a direct flex item of the row. */}
-      <span className="hidden sm:contents">
-        <Leader />
-      </span>
+      {running ? (
+        <div className="flex min-w-0 flex-col gap-3">
+          <RunningChip since={row.runningSince!} />
+          {/* The 4px striped bar — motion is reserved for the live card (§ Motion: `seep`). */}
+          <div aria-hidden className="seep-bar h-1 w-full rounded-full opacity-90" />
+        </div>
+      ) : (
+        <div className="flex min-w-0 items-end justify-between gap-4">
+          <span className="flex flex-col gap-0.5">
+            <span
+              className={`text-[24px] leading-none font-bold tracking-[-0.035em] ${
+                row.taskCount === 0 ? "text-muted" : "text-fg"
+              }`}
+            >
+              {row.taskCount}
+            </span>
+            <span className="colhead">
+              {row.taskCount === 0
+                ? "never run"
+                : `tasks${row.lastRunAt !== null ? ` · ${formatAgo(row.lastRunAt)}` : ""}`}
+            </span>
+          </span>
+          <Sparkline durationsMs={row.durationsMs} />
+        </div>
+      )}
 
-      {/*
-        The chip travels with the meta, not with the name: that is where the artboard puts it, and
-        it is what lets the dotted leader run from the name all the way to the row's status.
-        (The handoff's prose says "next to its name"; the artboard's markup is the tie-breaker.)
-        Indented on the stacked layout so it lines up under the name rather than under the index.
-      */}
-      <div className="ml-[46px] flex max-w-full flex-none flex-wrap items-center gap-x-[22px] gap-y-2 sm:ml-0 sm:flex-nowrap">
-        {row.runningSince !== null && <RunningChip since={row.runningSince} />}
-        {/* meta and arrow stay welded together, so when the chip pushes them onto a second line
-            at 375 the arrow goes with its row rather than stranding on a line of its own. */}
-        <span className="flex items-center gap-[22px]">
-          <span className="font-mono text-[10.5px] leading-[1.3] tracking-[-0.03em] whitespace-nowrap text-ink-2 sm:w-[120px] sm:text-right">
-            {metaOf(row)}
-          </span>
-          {/* Idle arrows sit back in `rule-dotted`; accent is reserved for the live workspace and
-              for the row being pointed at (handoff § Colour: "the one live mark"). */}
-          <span
-            aria-hidden
-            className={`text-[16px] leading-none transition-transform duration-200 ${
-              row.usable ? "group-hover:translate-x-1" : ""
-            } ${running ? "text-accent" : "text-rule-dotted group-hover:text-accent"}`}
-          >
-            →
-          </span>
+      <div className="flex min-w-0 items-baseline justify-between gap-4 border-t border-line pt-3.5">
+        <span className="mono truncate text-[9.5px] tracking-[-0.03em] text-ink-faint">
+          {!row.usable
+            ? "unusable name"
+            : running
+              ? `${row.taskCount} ${row.taskCount === 1 ? "task" : "tasks"}${
+                  row.lastRunAt !== null ? ` · ${formatAgo(row.lastRunAt)}` : ""
+                }`
+              : row.frontendRepo !== null
+                ? "backend + frontend"
+                : ""}
+        </span>
+        <span
+          className={`mono text-[10px] tracking-[-0.02em] transition-colors duration-[180ms] ${
+            running ? "text-accent" : "text-muted group-hover:text-accent"
+          }`}
+        >
+          open →
         </span>
       </div>
     </>
   );
 
-  const shape =
-    "group flex flex-col gap-3 border-b border-line pt-[22px] pb-5 " +
-    "transition-colors duration-[180ms] sm:flex-row sm:items-baseline sm:gap-5";
+  const shape = `group flex min-w-0 flex-col gap-5 p-6 ${
+    running ? "pane-live rounded-[18px]!" : "pane-card"
+  }`;
 
   if (!row.usable) {
     return (
-      <div className={`${shape} opacity-70`}>
+      <div className={`${shape} opacity-60`}>
         {body}
         <span className="sr-only">
           this workspace name is not a valid directory segment — the CLI cannot use it
@@ -130,17 +162,14 @@ export function ContentsRow({ row, index }: { row: EntryRow; index: number }) {
   return (
     <Link
       href={`/ws/${encodeURIComponent(row.name)}`}
-      className={`${shape} hover:bg-paper-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent`}
+      className={`${shape} focus-visible:[outline:2px_solid_var(--accent)] focus-visible:[outline-offset:2px]`}
     >
       {body}
     </Link>
   );
 }
 
-/**
- * The 2px ink rule that opens the list, drawn in from the left on load (handoff § Motion: `draw`).
- * `.anim-draw` already stands down under `prefers-reduced-motion`.
- */
+/** Kept for the stacked/empty layout: a soft rule opening the list. */
 export function ContentsRule() {
-  return <div className="anim-draw h-0.5 bg-fg" />;
+  return <div className="anim-draw h-px bg-line" />;
 }

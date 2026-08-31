@@ -53,10 +53,11 @@ export function SectionIndex({ entries }: { entries: readonly SectionEntry[] }) 
   return (
     <nav
       aria-label="Settings sections"
-      className="flex w-full min-w-0 flex-col gap-3 lg:w-[180px] lg:flex-none"
+      className="flex w-full min-w-0 flex-col gap-3 lg:w-[190px] lg:flex-none"
     >
       <span className="label text-accent!">Sections</span>
-      <ul className="flex min-w-0 flex-row flex-wrap gap-x-4 gap-y-1 lg:flex-col lg:gap-x-0">
+      {/* Glass § 05: nav items are PILLS — the active one on `pane-raised` in full ink. */}
+      <ul className="flex min-w-0 flex-row flex-wrap gap-2 lg:flex-col">
         {entries.map((entry) => {
           const current = entry.id === active;
           return (
@@ -65,12 +66,11 @@ export function SectionIndex({ entries }: { entries: readonly SectionEntry[] }) 
                 href={`#${entry.id}`}
                 aria-current={current ? "true" : undefined}
                 onClick={() => setActive(entry.id)}
-                // ≥44px tall on the 375 layout (handoff § Accessibility, "Targets"); the column
-                // above `lg` keeps the design's tighter 2-line rhythm.
-                className={`mono flex min-h-11 items-center border-l-2 py-1 pl-2.5 text-[11px] leading-[1.8] transition-colors duration-[180ms] focus-visible:[outline:2px_solid_var(--accent)] focus-visible:[outline-offset:2px] lg:min-h-0 ${
+                // ≥44px tall on the 375 layout (handoff § Accessibility, "Targets ≥44px").
+                className={`flex min-h-11 items-center rounded-[12px] px-3.5 py-2.5 text-[12px] transition-colors duration-[180ms] focus-visible:[outline:2px_solid_var(--accent)] focus-visible:[outline-offset:2px] lg:min-h-0 ${
                   current
-                    ? "border-accent text-fg"
-                    : "border-transparent text-ink-2 hover:text-fg"
+                    ? "bg-pane-raised text-fg shadow-[0_18px_40px_-30px_#000]"
+                    : "text-muted hover:bg-pane-quiet hover:text-fg"
                 }`}
               >
                 {entry.label}

@@ -112,7 +112,7 @@ export function MobileLedger({
           type="button"
           onClick={() => open("review")}
           data-mobile-start
-          className="mono flex min-h-11 flex-none items-center bg-fg px-3.5 text-[9px] font-medium tracking-[0.08em] text-bg transition-colors duration-[180ms] hover:bg-ink-2"
+          className="mono flex min-h-11 flex-none items-center rounded-[11px] bg-accent px-3.5 text-[9px] font-medium tracking-[0.08em] text-accent-ink transition-colors duration-[180ms] hover:bg-accent-hover"
         >
           START
         </button>

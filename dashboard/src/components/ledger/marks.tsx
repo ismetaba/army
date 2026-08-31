@@ -28,16 +28,25 @@ const STATUS_WORD: Record<LedgerStatus, string> = {
 const STATUS_INK: Record<LedgerStatus, string> = {
   running: "text-accent",
   done: "text-ok",
-  error: "text-danger",
+  error: "text-danger-ink",
   cancelled: "text-muted",
   awaiting: "text-warn",
 };
 
+/** The tinted pill fill behind each status (Glass: a status always sits inside a pill). */
+const STATUS_FILL: Record<LedgerStatus, string> = {
+  running: "bg-running-bg",
+  done: "bg-done-bg",
+  error: "bg-error-bg",
+  cancelled: "bg-cancelled-bg",
+  awaiting: "bg-awaiting-bg",
+};
+
 export function StatusMark({ status, className = "" }: { status: LedgerStatus; className?: string }) {
   return (
-    <span className={`inline-flex items-center gap-2 ${STATUS_INK[status]} ${className}`}>
+    <span className={`status-pill ${STATUS_FILL[status]} ${STATUS_INK[status]} ${className}`}>
       <span className={`mark ${STATUS_MARK[status]}`} aria-hidden />
-      <span className="statusword">{STATUS_WORD[status]}</span>
+      <span className="statusword whitespace-nowrap">{STATUS_WORD[status]}</span>
     </span>
   );
 }
@@ -55,8 +64,8 @@ const SEVERITY_MARK: Record<Severity, string> = {
 };
 
 const SEVERITY_INK: Record<Severity, string> = {
-  BLOCKER: "text-danger-deep",
-  MAJOR: "text-danger",
+  BLOCKER: "text-danger-ink",
+  MAJOR: "text-danger-ink",
   MINOR: "text-warn",
   NIT: "text-muted",
 };

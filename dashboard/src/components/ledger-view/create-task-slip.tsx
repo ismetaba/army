@@ -32,9 +32,11 @@ import {
   emptyArgs,
   fieldsFor,
   PROVIDERS,
+  TARGETS,
   LOCAL_LOGIN_PROVIDER,
 } from "@/lib/trigger-args";
-import { kindMeta, type RunKind } from "./model";
+import { KINDS, kindMeta, type RunKind } from "./model";
+import { useTaskLauncher } from "./task-launcher";
 
 export interface SlipDefaults {
   provider: string | null;
@@ -47,6 +49,12 @@ export interface BackendHealth {
   label: string;
 }
 
+/** T23: which target sets the workspace's config declares. */
+export interface SlipTargets {
+  hasBackend: boolean;
+  hasFrontend: boolean;
+}
+
 type Values = Record<string, string | boolean>;
 
 /** The fields the design draws by hand; everything else in the allowlist lives in the disclosure. */
@@ -57,19 +65,28 @@ export function CreateTaskSlip({
   kind,
   defaults,
   backend,
+  targets,
   onClose,
 }: {
   ws: string;
   kind: RunKind;
   defaults: SlipDefaults;
   backend: BackendHealth;
+  targets: SlipTargets;
   onClose: () => void;
 }) {
   const router = useRouter();
   const meta = kindMeta(kind);
   const titleId = useId();
 
-  const [values, setValues] = useState<Values>(() => initialValues(kind));
+  /*
+   * T23: the review TARGET control exists only when the workspace actually has both target
+   * sets — with a single target there is nothing to choose and the CLI's default is right.
+   * When it is shown, it starts on the CLI's own default (backend), so `WILL RUN` states the
+   * resolved `--target` — that preview is a promise about the command that runs.
+   */
+  const bothTargets = targets.hasBackend && targets.hasFrontend;
+  const [values, setValues] = useState<Values>(() => initialValues(kind, bothTargets));
   const [showOverride, setShowOverride] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,9 +201,9 @@ export function CreateTaskSlip({
 
   return (
     <div
-      // The workspace stays visible under a paper wash rather than a black scrim: the slip is a
-      // sheet laid on the ledger, not a lightbox (handoff § 03).
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-canvas/80 p-4 min-[900px]:p-14"
+      // The workspace stays visible under the dimmed field: the sheet is a pane laid ON the
+      // screen, not a lightbox (Glass § 03).
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-canvas/70 p-4 min-[900px]:p-14"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
       }}
@@ -197,14 +214,16 @@ export function CreateTaskSlip({
         aria-modal="true"
         aria-labelledby={titleId}
         data-slip={kind}
-        className="shadow-slip-center flex w-[720px] max-w-full flex-col border border-rule-2 bg-surface"
+        className="shadow-slip-center flex w-[700px] max-w-full flex-col overflow-hidden rounded-[22px] border border-accent-line bg-drawer"
       >
-        <header className="flex items-center justify-between gap-4 border-b-2 border-fg px-7 py-5">
-          <div className="flex min-w-0 items-baseline gap-3">
-            <span className="mono text-[10px] text-accent">{meta.index}</span>
-            <h2 id={titleId} className="truncate text-[22px] font-semibold tracking-[-0.025em]">
+        {/* The TYPE ROW (Glass § 03): the selected kind as a gold pill with dark text, the other
+            two outlined. Switching re-opens the sheet on that kind (a fresh draft, on purpose). */}
+        <header className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2" role="tablist" aria-label="Task type">
+            <h2 id={titleId} className="sr-only">
               {meta.title}
             </h2>
+            <TypeRow current={kind} />
           </div>
           <button
             type="button"
@@ -212,13 +231,13 @@ export function CreateTaskSlip({
             disabled={busy}
             aria-label="Close"
             data-slip-close
-            className="flex size-11 flex-none items-center justify-center text-[12px] text-muted transition-colors duration-[180ms] hover:text-fg min-[900px]:size-6"
+            className="flex size-11 flex-none items-center justify-center rounded-full text-[12px] text-muted transition-colors duration-[180ms] hover:bg-paper-hover hover:text-fg min-[900px]:size-7"
           >
             ✕
           </button>
         </header>
 
-        <p className="max-w-[520px] px-7 pt-[26px] pb-2 text-[13.5px] leading-[1.6] text-ink-2 text-pretty">
+        <p className="max-w-[540px] px-6 pt-6 pb-2 text-[13.5px] leading-[1.7] text-ink-3 text-pretty">
           {meta.description}
         </p>
 
@@ -227,14 +246,22 @@ export function CreateTaskSlip({
             event.preventDefault();
             void start();
           }}
-          className="flex flex-col gap-[26px] px-7 pt-5 pb-[26px]"
+          className="flex flex-col gap-5 px-6 pt-4 pb-6"
         >
           {kind === "review" ? (
-            <BaseRefField
-              value={String(values.base ?? "")}
-              onChange={(v) => set("base", v)}
-              error={errorField === "base" ? error : null}
-            />
+            <>
+              <BaseRefField
+                value={String(values.base ?? "")}
+                onChange={(v) => set("base", v)}
+                error={errorField === "base" ? error : null}
+              />
+              {bothTargets ? (
+                <TargetField
+                  value={String(values.target ?? "backend")}
+                  onChange={(v) => set("target", v)}
+                />
+              ) : null}
+            </>
           ) : null}
 
           {kind === "test-feature" ? (
@@ -355,7 +382,13 @@ export function CreateTaskSlip({
               </p>
             ) : (
               <div className="cmd-strip flex items-center gap-3 px-4 py-3">
-                <code data-slip-will-run className="mono min-w-0 flex-1 truncate text-[10.5px]">
+                <span aria-hidden className="mono flex-none text-[10.5px] text-accent">
+                  $
+                </span>
+                <code
+                  data-slip-will-run
+                  className="mono min-w-0 flex-1 truncate text-[10.5px] text-ink-2"
+                >
                   {willRun}
                 </code>
                 <CopyButton value={willRun} what="the command" />
@@ -364,14 +397,14 @@ export function CreateTaskSlip({
           </div>
 
           {blocked !== null ? (
-            <p data-slip-blocked className="border-l-2 border-danger bg-danger-tint px-3.5 py-2.5 text-[11px] text-danger">
+            <p data-slip-blocked className="rounded-[12px] border border-danger-line bg-danger-tint px-3.5 py-2.5 text-[11px] text-danger-ink">
               {blocked} — start the backend for this workspace, or fix its port in settings, before
               black-box-testing it.
             </p>
           ) : null}
 
           {error !== null && errorField === null ? (
-            <p data-slip-error className="border-l-2 border-danger bg-danger-tint px-3.5 py-2.5 text-[11px] text-danger">
+            <p data-slip-error className="rounded-[12px] border border-danger-line bg-danger-tint px-3.5 py-2.5 text-[11px] text-danger-ink">
               {error}
               {runningPid !== null ? (
                 <>
@@ -388,8 +421,8 @@ export function CreateTaskSlip({
             </p>
           ) : null}
 
-          <div className="-mx-7 -mb-[26px] mt-1 flex flex-wrap items-center justify-between gap-4 border-t border-line px-7 py-[18px]">
-            <span className="mono text-[9.5px] text-muted">esc to cancel · ⌘↵ to start</span>
+          <div className="-mx-6 -mb-6 mt-1 flex flex-wrap items-center justify-between gap-4 border-t border-line bg-[rgba(0,0,0,0.2)] px-6 py-[18px]">
+            <span className="mono text-[9.5px] text-ink-faint">esc to cancel · ⌘↵ to start</span>
             <div className="flex items-center gap-5">
               <button
                 type="button"
@@ -404,7 +437,7 @@ export function CreateTaskSlip({
                 type="submit"
                 disabled={busy || !built.ok || blocked !== null}
                 data-slip-start
-                className="btnlabel min-h-11 bg-accent px-5 py-2.5 text-surface transition-colors duration-[180ms] hover:bg-accent-hover disabled:opacity-40 min-[900px]:min-h-0"
+                className="btnlabel min-h-11 rounded-[13px] bg-accent px-5 py-2.5 text-accent-ink transition-all duration-[180ms] hover:-translate-y-0.5 hover:bg-accent-hover hover:shadow-[0_14px_28px_-14px_#e8b04b] disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none min-[900px]:min-h-0"
               >
                 {busy ? "starting…" : "start task"}
               </button>
@@ -417,16 +450,55 @@ export function CreateTaskSlip({
 }
 
 /** The field names the design lays out itself, so the "extras" loop does not render them twice. */
-const DESIGNED = new Set(["base", "desc", "url", "feature", "video"]);
+const DESIGNED = new Set(["base", "desc", "url", "feature", "video", "target"]);
+
+/**
+ * The sheet's type row (Glass § 03): the selected kind is a gold pill with dark text, the other
+ * two outlined pills that warm on hover. Selecting one re-opens the sheet on that kind — a
+ * fresh draft, which is the same behaviour the launcher cards have.
+ */
+function TypeRow({ current }: { current: RunKind }) {
+  const { open } = useTaskLauncher();
+  return (
+    <>
+      {KINDS.map((k) => {
+        const selected = k.kind === current;
+        return (
+          <button
+            key={k.kind}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            data-slip-type={k.kind}
+            onClick={() => {
+              if (!selected) open(k.kind);
+            }}
+            className={`rounded-[12px] px-3.5 py-2 text-[12.5px] font-semibold tracking-[-0.01em] transition-colors duration-[180ms] ${
+              selected
+                ? "bg-accent text-accent-ink"
+                : "border border-rule-dotted text-ink-3 hover:border-accent-line hover:text-fg"
+            }`}
+          >
+            {k.title}
+          </button>
+        );
+      })}
+    </>
+  );
+}
 
 /**
  * `main` is pre-filled rather than left empty, because the design shows it and because it is what
  * the CLI defaults to anyway — so `WILL RUN` states the ref that will actually be diffed instead
- * of hiding it behind a default.
+ * of hiding it behind a default. The review `target` gets the same treatment when the workspace
+ * has both target sets: pre-set to the CLI's default (backend), so the preview says it out loud.
  */
-function initialValues(kind: RunKind): Values {
+function initialValues(kind: RunKind, bothTargets = false): Values {
   const values = emptyArgs(kind);
-  if (kind === "review") values.base = "main";
+  if (kind === "review") {
+    values.base = "main";
+    if (bothTargets) values.target = "backend";
+  }
   return values;
 }
 
@@ -492,12 +564,46 @@ function BaseRefField({
               key={ref}
               type="button"
               onClick={() => onChange(ref)}
-              className="mono border border-rule-2 px-2 py-1 text-[9px] text-ink-2 transition-colors duration-[180ms] hover:border-fg hover:text-fg"
+              className="mono rounded-[8px] border border-rule-dotted px-2 py-1 text-[9px] text-ink-2 transition-colors duration-[180ms] hover:border-accent-line hover:text-fg"
             >
               {ref}
             </button>
           ))}
         </div>
+      </div>
+    </FieldFrame>
+  );
+}
+
+/**
+ * T23 — the review TARGET: which of the workspace's two repos the diff belongs to. A segmented
+ * control over a fixed enum, rendered only when the workspace actually has both targets (the
+ * caller decides). One of the two is always selected — a diff belongs to exactly one repo.
+ */
+function TargetField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <FieldFrame label="target" aside="which repo the diff belongs to" error={null}>
+      <div role="group" aria-label="Target" className="flex w-fit gap-0.5 rounded-[11px] bg-surface-2 p-0.5">
+        {TARGETS.map((target) => (
+          <button
+            key={target}
+            type="button"
+            aria-pressed={value === target}
+            onClick={() => onChange(target)}
+            data-slip-field={`target:${target}`}
+            className={`mono min-h-11 rounded-[9px] px-3.5 py-1.5 text-[9.5px] tracking-[0.04em] uppercase transition-colors duration-[180ms] min-[900px]:min-h-0 ${
+              value === target ? "bg-accent font-medium text-accent-ink" : "text-ink-3 hover:text-fg"
+            }`}
+          >
+            {target}
+          </button>
+        ))}
       </div>
     </FieldFrame>
   );
@@ -607,7 +713,7 @@ function Segmented({
         <span className="mono text-[12px] tracking-[-0.03em]">{label}</span>
         {note ? <span className="mono text-[9.5px] text-muted">{note}</span> : null}
       </span>
-      <div role="group" aria-label={label} className="flex border border-fg">
+      <div role="group" aria-label={label} className="flex gap-0.5 rounded-[11px] bg-surface-2 p-0.5">
         {([false, true] as const).map((state) => (
           <button
             key={String(state)}
@@ -615,8 +721,8 @@ function Segmented({
             aria-pressed={on === state}
             onClick={() => onChange(state)}
             data-slip-field={`${name}:${state ? "on" : "off"}`}
-            className={`mono min-h-11 px-2.5 py-1.5 text-[9px] tracking-[0.04em] transition-colors duration-[180ms] min-[900px]:min-h-0 ${
-              on === state ? "bg-fg text-bg" : "text-ink-3 hover:text-fg"
+            className={`mono min-h-11 rounded-[9px] px-2.5 py-1.5 text-[9px] tracking-[0.04em] transition-colors duration-[180ms] min-[900px]:min-h-0 ${
+              on === state ? "bg-accent font-medium text-accent-ink" : "text-ink-3 hover:text-fg"
             }`}
           >
             {state ? "ON" : "OFF"}

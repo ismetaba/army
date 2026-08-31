@@ -164,7 +164,7 @@ export function DesignFeedback({
   }, [feature, queueNote, router, runId, ws]);
 
   return (
-    <section className="flex min-w-0 flex-col gap-3" data-design-feedback>
+    <section className="pane-live flex min-w-0 flex-col gap-3 p-5" data-design-feedback>
       <LabelHead>your feedback</LabelHead>
 
       <form
@@ -175,7 +175,7 @@ export function DesignFeedback({
         }}
         className="flex min-w-0 flex-col gap-3"
       >
-        <div className="relative min-w-0 border-b border-line focus-within:border-accent">
+        <div className="field-row relative min-w-0">
           <label htmlFor="design-feedback-text" className="sr-only">
             What should the next iteration change?
           </label>
@@ -193,7 +193,7 @@ export function DesignFeedback({
             // every click still lands on the textarea underneath it.
             <div
               aria-hidden
-              className="pointer-events-none absolute inset-0 flex items-start gap-[2px] pt-px"
+              className="pointer-events-none absolute inset-x-[13px] top-[8px] flex items-start gap-[2px] pt-px"
             >
               <span className="mono text-[11.5px] leading-[1.7] text-muted">{PLACEHOLDER}</span>
               <span className="anim-caret mt-[3px] block h-[15px] w-px bg-accent" />

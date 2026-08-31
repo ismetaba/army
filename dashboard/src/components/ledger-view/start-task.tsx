@@ -1,14 +1,12 @@
 "use client";
 
 /**
- * "Start a task" — the three kinds as three numbered entries divided by 1px rules (handoff § 02).
- *
- * Deliberately NOT cards. The ledger's whole device is that rules do the work boxes normally do,
- * and three bordered tiles here would make the page read as a dashboard of widgets rather than as
- * a page in a book.
+ * The task LAUNCHER (Glass § 02): the three kinds as three frosted cards in a 1fr grid — `1
+ * Review` with the gold index on a slightly brighter pane, then `Test feature` and `Design
+ * loop`. Hover lifts the card 3px and warms the border; a click opens the create sheet with
+ * that type pre-selected.
  */
 
-import { SectionHead } from "@/components/ledger/chrome";
 import { KINDS } from "./model";
 import { useTaskLauncher } from "./task-launcher";
 
@@ -16,44 +14,29 @@ export function StartTask() {
   const { open } = useTaskLauncher();
 
   return (
-    <section className="flex min-w-0 flex-col gap-3.5">
-      <SectionHead
-        title="Start a task"
-        aside={<span className="mono text-[9.5px] tracking-[0.06em] text-muted">THREE KINDS</span>}
-      />
-
-      <div className="grid grid-cols-1 gap-y-6 min-[900px]:grid-cols-3 min-[900px]:gap-y-0">
-        {KINDS.map((meta, index) => (
-          <div
-            key={meta.kind}
-            className={`flex flex-col gap-[9px] py-1 ${
-              index === 0
-                ? "min-[900px]:pr-6"
-                : index === 1
-                  ? "min-[900px]:border-l min-[900px]:border-line min-[900px]:px-6"
-                  : "min-[900px]:border-l min-[900px]:border-line min-[900px]:pl-6"
-            }`}
-          >
-            <div className="flex items-baseline gap-2.5">
-              <span className={`mono text-[10px] ${index === 0 ? "text-accent" : "text-muted"}`}>
-                {meta.index}
-              </span>
-              <h3 className="text-[17px] font-medium tracking-[-0.02em]">{meta.title}</h3>
-            </div>
-            <p className="text-[13px] leading-[1.55] text-ink-2 text-pretty">{meta.blurb}</p>
-            <button
-              type="button"
-              onClick={() => open(meta.kind)}
-              data-start-kind={meta.kind}
-              className={`mono mt-0.5 min-h-11 self-start text-[9.5px] tracking-[0.06em] transition-colors duration-[180ms] min-[900px]:min-h-0 ${
-                index === 0 ? "text-accent hover:text-accent-hover" : "text-ink-3 hover:text-fg"
-              }`}
-            >
-              START →
-            </button>
-          </div>
-        ))}
-      </div>
+    <section aria-label="Start a task" className="grid min-w-0 grid-cols-1 gap-4 min-[900px]:grid-cols-3">
+      {KINDS.map((meta, index) => (
+        <button
+          key={meta.kind}
+          type="button"
+          onClick={() => open(meta.kind)}
+          data-start-kind={meta.kind}
+          className={`pane-card flex min-w-0 flex-col gap-2.5 rounded-[16px]! p-5 text-left focus-visible:[outline:2px_solid_var(--accent)] focus-visible:[outline-offset:2px] ${
+            index === 0 ? "bg-pane-raised!" : ""
+          }`}
+        >
+          <span className="flex items-baseline gap-2.5">
+            <span className={`mono text-[10px] ${index === 0 ? "text-accent" : "text-ink-faint"}`}>
+              {index + 1}
+            </span>
+            <span className="text-[17px] font-semibold tracking-[-0.025em] text-fg">{meta.title}</span>
+          </span>
+          <span className="text-[12.5px] leading-[1.55] text-ink-3 text-pretty">{meta.blurb}</span>
+          <span className="mono mt-auto pt-1 text-[9.5px] tracking-[0.06em] text-accent">
+            START →
+          </span>
+        </button>
+      ))}
     </section>
   );
 }

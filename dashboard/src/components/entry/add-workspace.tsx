@@ -165,35 +165,37 @@ export function AddWorkspace({
 
   return (
     <>
+      {/* Glass § 01: the full-width dashed add pane — a dashed gold border, a dashed circle
+          with `+`, the label and helper, and the ⌘N key cap right-aligned. */}
       <button
         ref={opener}
         type="button"
         onClick={openSlip}
-        className="group flex w-full items-center justify-between gap-4 py-5 text-left transition-colors duration-[180ms] hover:bg-paper-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+        className="group flex w-full items-center justify-between gap-5 rounded-[18px] border border-dashed border-accent-line px-6 py-5 text-left transition-colors duration-[180ms] hover:border-accent hover:bg-accent-tint/50 focus-visible:[outline:2px_solid_var(--accent)] focus-visible:[outline-offset:2px]"
       >
-        <span className="flex min-w-0 items-baseline gap-5">
+        <span className="flex min-w-0 items-center gap-4">
           <span
             aria-hidden
-            className="w-[26px] flex-none font-mono text-[11px] tracking-[-0.02em] text-accent"
+            className="flex size-[34px] flex-none items-center justify-center rounded-full border border-dashed border-accent-line text-[15px] text-accent"
           >
             +
           </span>
-          <span className="text-[20px] leading-[1.2] font-medium tracking-[-0.02em] text-accent transition-colors duration-[180ms] group-hover:text-accent-hover">
-            Add workspace
-          </span>
-          {!bare && (
-            <span className="hidden font-mono text-[10.5px] tracking-[-0.03em] text-muted sm:inline">
-              point at a repo folder
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[15px] leading-[1.2] font-semibold tracking-[-0.02em] text-fg">
+              Add workspace
             </span>
-          )}
+            <span className="font-mono text-[9.5px] tracking-[-0.03em] text-muted">
+              point at a repo folder · two steps
+            </span>
+          </span>
         </span>
         {!bare && (
-          <span
+          <kbd
             aria-hidden
-            className="hidden flex-none border border-rule-2 px-2 py-1 font-mono text-[9.5px] tracking-[-0.02em] text-ink-3 sm:block"
+            className="chip hidden flex-none px-2 py-1 font-mono text-[9.5px] tracking-[-0.02em] text-ink-2 sm:block"
           >
             ⌘N
-          </span>
+          </kbd>
         )}
       </button>
 
@@ -209,7 +211,7 @@ export function AddWorkspace({
         onClick={(event) => {
           if (event.target === dialog.current) closeSlip();
         }}
-        className="shadow-slip-right fixed top-0 right-0 bottom-0 left-auto m-0 h-dvh max-h-dvh w-[420px] max-w-full border-l border-rule-2 bg-surface p-0 text-fg backdrop:bg-bg backdrop:opacity-55"
+        className="shadow-slip-right fixed top-0 right-0 bottom-0 left-auto m-0 h-dvh max-h-dvh w-[420px] max-w-full border-l border-rule-2 bg-drawer p-0 text-fg backdrop:bg-canvas backdrop:opacity-60"
       >
         <div className="flex h-full flex-col">
           <div className="flex flex-none items-center justify-between gap-4 border-b border-line px-6 py-[18px]">
@@ -231,8 +233,8 @@ export function AddWorkspace({
                 <div className="flex flex-col gap-[9px]">
                   <FieldLabel>Repo folder</FieldLabel>
                   <div
-                    className={`flex items-center justify-between gap-3 border-b pb-2 transition-colors duration-[180ms] focus-within:border-accent ${
-                      trimmedRepo === "" ? "border-line" : "border-fg"
+                    className={`field-row flex items-center justify-between gap-3 ${
+                      trimmedRepo === "" ? "" : ""
                     }`}
                   >
                     <input
@@ -243,7 +245,7 @@ export function AddWorkspace({
                       autoComplete="off"
                       placeholder="/Users/you/code/your-repo"
                       aria-label="Repo folder"
-                      className="min-w-0 flex-1 bg-transparent font-mono text-[11px] tracking-[-0.03em] text-fg outline-none placeholder:text-muted"
+                      className="field-bare min-w-0 flex-1 font-mono text-[11px] tracking-[-0.03em] placeholder:text-muted"
                     />
                     <button
                       type="button"
@@ -266,11 +268,7 @@ export function AddWorkspace({
 
                 <div className="flex flex-col gap-[9px]">
                   <FieldLabel>Name</FieldLabel>
-                  <div
-                    className={`flex items-center gap-0.5 border-b pb-2 transition-colors duration-[180ms] focus-within:border-accent ${
-                      trimmedName === "" ? "border-line" : "border-accent"
-                    }`}
-                  >
+                  <div className="field-row flex items-center gap-0.5">
                     {/* Sized in `ch` so the caret sits immediately after the last character, the
                         way the artboard draws it. Mono makes `ch` exact. */}
                     <input
@@ -287,7 +285,7 @@ export function AddWorkspace({
                       placeholder="workspace-name"
                       aria-label="Name"
                       style={{ width: `${name.length || 15}ch` }}
-                      className="max-w-full bg-transparent font-mono text-[13px] tracking-[-0.03em] text-fg outline-none placeholder:text-muted"
+                      className="field-bare max-w-full font-mono text-[13px] tracking-[-0.03em] placeholder:text-muted"
                     />
                     {/* The design's blinking caret marks NAME as the live field at rest; while the
                         field IS focused the browser draws the real one, so this stands down rather
@@ -318,10 +316,10 @@ export function AddWorkspace({
                             setProvider(id);
                             setDefaultsEdited(true);
                           }}
-                          className={`font-mono text-[10px] tracking-[-0.02em] transition-colors duration-[180ms] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                          className={`rounded-[11px] font-mono text-[10px] tracking-[-0.02em] transition-colors duration-[180ms] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                             selected
-                              ? "bg-fg px-[10px] py-1.5 text-bg"
-                              : "border border-rule-2 px-[10px] py-1.5 text-ink-2 hover:border-fg hover:text-fg"
+                              ? "bg-accent px-[10px] py-1.5 text-accent-ink"
+                              : "border border-rule-dotted px-[10px] py-1.5 text-ink-2 hover:border-accent-line hover:text-fg"
                           }`}
                         >
                           {id}
@@ -340,9 +338,7 @@ export function AddWorkspace({
                     autoComplete="off"
                     placeholder="qwen3-coder-30b-a3b-instruct"
                     aria-label="Model id"
-                    className={`w-full border-b bg-transparent pb-2 font-mono text-[11px] tracking-[-0.03em] text-fg outline-none transition-colors duration-[180ms] focus:border-accent placeholder:text-muted ${
-                      model.trim() === "" ? "border-line" : "border-fg"
-                    }`}
+                    className="field mono text-[11px] placeholder:text-muted"
                   />
                   <p className="font-mono text-[10px] leading-[1.6] tracking-[-0.03em] text-muted">
                     used unless a task overrides it — saved to the repo&apos;s aw.config.json
@@ -410,7 +406,7 @@ function SlipPrimary(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...props}
-      className="btnlabel bg-fg px-4 py-2.5 text-bg transition-colors duration-[180ms] hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40 disabled:hover:bg-fg"
+      className="btnlabel rounded-[13px] bg-accent px-4 py-2.5 text-accent-ink transition-all duration-[180ms] hover:-translate-y-px hover:bg-accent-hover hover:shadow-[0_14px_28px_-14px_#e8b04b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
     />
   );
 }

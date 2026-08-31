@@ -10,25 +10,22 @@ import { commandText } from "@/lib/untrusted";
  */
 
 /*
- * Entry-screen bar: product name left, the local address right, 1px rule under.
- * 16px/40px, matching the artboard — the handoff prose says 64px for the entry screen, but the
- * reference puts the bar and the body on the same 40px gutter so the brand lines up with
- * CONTENTS, and the artboard is the pixel authority.
+ * Entry-screen bar (Glass § 01): a gold haloed dot + the product name, the local address in mono
+ * on the right, over `chrome-fill` with a `chrome-rule` underline.
  */
 export function EntryTopBar() {
   return (
-    <header className="flex h-12 items-center justify-between border-b border-line px-10">
-      <span className="mono text-[10.5px] font-medium tracking-[0.16em] uppercase">
-        agent-workflows
+    <header className="flex items-center justify-between gap-4 border-b border-chrome-rule bg-chrome-fill px-8 py-3.5">
+      <span className="flex items-center gap-2.5">
+        <span aria-hidden className="mark mark-running" />
+        <span className="text-[13.5px] font-semibold tracking-[-0.01em]">agent-workflows</span>
       </span>
-      <span className="mono text-[9.5px] text-muted tracking-[0.12em] uppercase">
-        local · 127.0.0.1:4400
-      </span>
+      <span className="mono text-[10px] tracking-[-0.03em] text-ink-faint">127.0.0.1:4400</span>
     </header>
   );
 }
 
-/** A 2px ink rule under a heading — the design's main structural device. */
+/** A section head over a soft hairline — Glass panes are ruled by light, not by ink bars. */
 export function SectionHead({
   title,
   aside,
@@ -44,7 +41,7 @@ export function SectionHead({
         <h2 className="title-section">{title}</h2>
         {aside}
       </div>
-      <div className="mt-2.5 h-0.5 bg-fg" />
+      <div className="mt-2.5 h-px bg-line" />
     </div>
   );
 }
@@ -83,7 +80,10 @@ export function CommandStrip({
   const safe = commandText(command);
   return (
     <div className={`cmd-strip flex items-start justify-between gap-4 px-3.5 py-2.5 ${className}`}>
-      <code className="mono min-w-0 flex-1 overflow-x-auto whitespace-pre text-[10.5px] leading-[1.7]">
+      <span aria-hidden className="mono flex-none text-[10.5px] leading-[1.7] text-accent">
+        $
+      </span>
+      <code className="mono min-w-0 flex-1 overflow-x-auto whitespace-pre text-[10.5px] leading-[1.7] text-ink-2">
         {safe}
       </code>
       {action ?? <CopyButton value={safe} label={onCopyLabel} what="the command" />}
@@ -112,25 +112,27 @@ export function CopyButton({
  * and there are dozens of them.
  */
 
-/** Primary action: ink fill, mono label. */
+/**
+ * Primary action: the gold CTA — dark text on an accent fill, a lift + glow on hover.
+ * `accent` is accepted for compatibility; in Glass EVERY primary action is the gold one.
+ */
 export function PrimaryButton({
   children,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept out of `rest` so it never lands on the DOM element
   accent = false,
   ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { accent?: boolean }) {
   return (
     <button
       {...rest}
-      className={`btnlabel tap px-4 py-2 text-bg transition-colors duration-[180ms] disabled:opacity-40 ${
-        accent ? "bg-accent hover:bg-accent-hover" : "bg-fg hover:bg-ink-2"
-      } ${rest.className ?? ""}`}
+      className={`btnlabel tap rounded-[13px] bg-accent px-4 py-2 text-accent-ink transition-all duration-[180ms] hover:-translate-y-px hover:bg-accent-hover hover:shadow-[0_14px_28px_-14px_#e8b04b] disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none ${rest.className ?? ""}`}
     >
       {children}
     </button>
   );
 }
 
-/** Secondary action: 1px outline. `danger` fills red on hover (used by cancel / delete). */
+/** Secondary action: 1px strong outline. `danger` sits on a coral tint (cancel / delete). */
 export function OutlineButton({
   children,
   danger = false,
@@ -139,10 +141,10 @@ export function OutlineButton({
   return (
     <button
       {...rest}
-      className={`btnlabel tap border px-4 py-2 transition-colors duration-[180ms] disabled:opacity-40 ${
+      className={`btnlabel tap rounded-[11px] border px-4 py-2 transition-colors duration-[180ms] disabled:opacity-40 ${
         danger
-          ? "border-danger text-danger hover:bg-danger hover:text-bg"
-          : "border-rule-2 text-ink-2 hover:border-fg hover:text-fg"
+          ? "border-danger-line bg-danger-tint text-danger-ink hover:bg-danger hover:text-accent-ink"
+          : "border-rule-dotted text-ink-2 hover:border-fg hover:bg-fg hover:text-canvas"
       } ${rest.className ?? ""}`}
     >
       {children}

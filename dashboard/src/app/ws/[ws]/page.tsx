@@ -9,7 +9,7 @@ import {
 } from "@/lib/store";
 import { listActiveRuns, listTriggeredRuns } from "@/lib/runner";
 import { LedgerTable } from "@/components/ledger-view/ledger-table";
-import { LiveAnnounce, LiveMargin } from "@/components/ledger-view/live-margin";
+import { LiveAnnounce, RunningPane } from "@/components/ledger-view/live-margin";
 import { LiveRunProvider } from "@/components/ledger-view/live-run";
 import { MobileLedger } from "@/components/ledger-view/mobile-ledger";
 import { StartTask } from "@/components/ledger-view/start-task";
@@ -19,7 +19,6 @@ import {
   failedLaunchRow,
   KINDS,
   toLedgerRow,
-  weekSummary,
   type LedgerRow,
   type RunKind,
 } from "@/components/ledger-view/model";
@@ -115,11 +114,11 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
   };
 
   /*
-   * The margin is about the WORKSPACE, not about the filter: switching to `ARCHIVED` or to one
-   * kind must not change what "in progress" or "this week" means. Both read the active list.
+   * The live pane is about the WORKSPACE, not about the filter: switching to `ARCHIVED` or to
+   * one kind must not change what "running now" means. Both read the active list.
    */
   const lastFiled: LedgerRow | null = activeRows.find((r) => r.status !== "running") ?? null;
-  const week = weekSummary(activeRows);
+  const runningRow: LedgerRow | null = activeRows.find((r) => r.status === "running") ?? null;
 
   // The tail the LOG block shows before anything streams. Read here rather than fetched, so the
   // block is populated in the first paint instead of a beat later.
@@ -134,17 +133,27 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
   const facts = workspaceFacts(ws);
   const backend = await probeBackend(facts);
 
+  // T23: a two-repo workspace names both halves in the top bar. Config first (it is the truth
+  // the workflows act on), registry second, single path as before for everyone else.
+  const backendRepo = facts.backendRepo ?? entry?.backendRepo ?? null;
+  const frontendRepo = facts.frontendRepo ?? entry?.frontendRepo ?? null;
+  const repoLabel =
+    backendRepo !== null && frontendRepo !== null && backendRepo !== frontendRepo
+      ? `${backendRepo} · ${frontendRepo}`
+      : (entry?.repoRoot ?? null);
+
   return (
     <TaskLauncherProvider
       ws={ws}
       defaults={{ provider: facts.provider, model: facts.model }}
       backend={backend}
+      targets={{ hasBackend: facts.hasBackend, hasFrontend: facts.hasFrontend }}
     >
       <LiveRunProvider ws={ws} seedLines={seedLines}>
         <div className="flex min-h-screen min-w-0 flex-col">
           <TopBar
             ws={ws}
-            repoRoot={entry?.repoRoot ?? null}
+            repoRoot={repoLabel}
             workspaces={summaries
               .filter((w) => w.usable)
               .map((w) => ({ name: w.name, runCount: w.runCount }))}
@@ -155,20 +164,20 @@ export default async function WorkspacePage({ params, searchParams }: PageProps<
               once and survives the switch from "running" to the filed verdict. */}
           <LiveAnnounce lastFiled={lastFiled} />
 
-          <div className="hidden gap-9 px-10 pt-9 pb-11 min-[900px]:flex">
-            <LiveMargin ws={ws} lastFiled={lastFiled} week={week} />
-            <main className="flex min-w-0 flex-1 flex-col gap-[34px]">
-              <StartTask />
-              <LedgerTable
-                ws={ws}
-                rows={rows}
-                archived={archived}
-                kind={kind}
-                counts={counts}
-                total={matching.length}
-              />
-            </main>
-          </div>
+          {/* Glass § 02: a STACK of panes — the live pane on top, then the launcher cards, then
+              the settled-runs shell. One column; the live pane is the one elevated surface. */}
+          <main className="mx-auto hidden w-full max-w-[1240px] min-w-0 flex-col gap-5 px-8 pt-7 pb-10 min-[900px]:flex">
+            <RunningPane ws={ws} runningRow={runningRow} />
+            <StartTask />
+            <LedgerTable
+              ws={ws}
+              rows={rows}
+              archived={archived}
+              kind={kind}
+              counts={counts}
+              total={matching.length}
+            />
+          </main>
 
           <div className="flex min-w-0 flex-1 flex-col min-[900px]:hidden">
             <MobileLedger ws={ws} rows={rows} archived={archived} kind={kind} counts={counts} />

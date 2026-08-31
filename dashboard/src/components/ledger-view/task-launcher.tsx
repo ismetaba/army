@@ -11,7 +11,12 @@
  */
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { CreateTaskSlip, type BackendHealth, type SlipDefaults } from "./create-task-slip";
+import {
+  CreateTaskSlip,
+  type BackendHealth,
+  type SlipDefaults,
+  type SlipTargets,
+} from "./create-task-slip";
 import type { RunKind } from "./model";
 
 interface Launcher {
@@ -29,11 +34,14 @@ export function TaskLauncherProvider({
   ws,
   defaults,
   backend,
+  targets,
   children,
 }: {
   ws: string;
   defaults: SlipDefaults;
   backend: BackendHealth;
+  /** T23: which target sets the workspace declares — drives the review TARGET control. */
+  targets: SlipTargets;
   children: React.ReactNode;
 }) {
   const [openKind, setOpenKind] = useState<RunKind | null>(null);
@@ -52,6 +60,7 @@ export function TaskLauncherProvider({
           kind={openKind}
           defaults={defaults}
           backend={backend}
+          targets={targets}
           onClose={() => setOpenKind(null)}
         />
       ) : null}

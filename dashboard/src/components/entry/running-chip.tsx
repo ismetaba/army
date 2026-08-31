@@ -37,10 +37,10 @@ export function RunningChip({ since }: { since: string }) {
   const time = elapsed(since, now);
 
   return (
-    <span className="flex flex-none items-center gap-2 border border-accent px-[9px] py-1 text-accent">
+    <span className="flex w-fit flex-none items-center gap-2 rounded-[20px] bg-running-bg px-3 py-1 text-accent">
       <StatusSquare status="running" />
       {/* `font-mono` + an explicit tracking rather than `.mono`: the design gives this chip +0.06em,
-          and `.mono` is unlayered CSS, so its -0.045em would win over a Tailwind tracking utility. */}
+          and `.mono`'s -0.045em would otherwise win over a Tailwind tracking utility. */}
       <span className="font-mono text-[9.5px] font-medium tracking-[0.06em]">
         {time === "" ? "RUNNING" : `RUNNING ${time}`}
       </span>

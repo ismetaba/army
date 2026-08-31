@@ -1,74 +1,93 @@
 @import "tailwindcss";
 
 /*
- * The "Ledger" design system (docs/design-reference/HANDOFF-ledger.md).
+ * The "Glass" design system (design_handoff_agent_workflows_glass/README.md).
  *
- * Paper instead of a console: one warm light palette, one burnt-orange accent, rules instead of
- * boxes, zero radius, no shadows except three docked/floating surfaces. There is deliberately NO
- * dark variant — the design is a single paper theme, and a half-ported dark mode is how a local
- * tool ends up with two palettes that disagree. `color-scheme: light` keeps the browser's own
- * chrome (scrollbars, form controls, the canvas behind the page) in step.
+ * Deep night-blue field, warm gold as the only accent. Every surface is a frosted pane: a
+ * translucent white fill over the field, a barely-there 1px white border, a large soft shadow.
+ * Hierarchy is made of LIGHT, not lines — the pane that matters is lighter and sits higher;
+ * settled content sinks. Corners are generously rounded, rules are used sparingly, and nothing
+ * but the live run moves. `backdrop-filter` is deliberately not used (handoff § Accessibility):
+ * the panes are plain translucent fills so they render identically everywhere.
  *
- * Token names are kept from the previous theme (`--bg`, `--surface`, `--line`, `--fg`, `--muted`,
- * `--link`, the status pairs) so every existing component picked up the new palette the moment
- * this file changed; the Ledger-specific tokens are added below them.
+ * Token names are kept from the previous (Ledger) theme — `--bg`, `--surface`, `--line`, `--fg`,
+ * `--muted`, `--accent`, the status pairs — so every existing component picked up the new palette
+ * the moment this file changed; the Glass-specific tokens are added below them.
  */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  /* paper */
-  --bg: #f7f4ee; /* paper — screen background */
-  --surface: #fffdf8; /* paper-card — slips, drawers, diff panel */
-  --surface-2: #f1ece0; /* paper-tint — command strips, log console, active row */
-  --paper-hover: #f2ede2;
-  --canvas: #e8e3d8;
+  /* the field and its panes */
+  --bg: #0a1020; /* screen background (bottom of the gradient; body carries the gradient) */
+  --bg-top: #0d1428; /* top of the screen gradient */
+  --canvas: #070c18; /* the field behind everything — sheet scrims dim to this */
+  --surface: rgba(255, 255, 255, 0.05); /* pane — secondary panes, cards */
+  --surface-2: rgba(0, 0, 0, 0.3); /* plate — code, command, log, evidence blocks */
+  --paper-hover: rgba(255, 255, 255, 0.06); /* row / item hover */
+  --pane-raised: rgba(255, 255, 255, 0.075); /* the live pane, selected card, feedback pane */
+  --pane-header: rgba(255, 255, 255, 0.055); /* task-detail header pane */
+  --pane-quiet: rgba(255, 255, 255, 0.035); /* list items, settings sections */
+  --pane-sunken: rgba(255, 255, 255, 0.03); /* table shells, severity rail */
+  --chip-fill: rgba(255, 255, 255, 0.06); /* switcher pill, key caps */
+  --chrome-fill: rgba(255, 255, 255, 0.03); /* top bar fill */
+  --drawer: rgba(18, 26, 48, 0.94); /* the failure pane docked over dimmed content */
 
   /* ink */
-  --fg: #17150f; /* ink — primary text, 2px rules, primary button fill */
-  --ink-2: #5c564a; /* body copy, secondary values */
-  --ink-3: #6b6459; /* field labels, quiet actions */
-  --muted: #8a8378; /* ink-4 — meta, column headers, disabled */
-  --ink-faint: #a19a8d; /* earlier log lines */
-  --gutter: #a8a094; /* diff line numbers */
+  --fg: #eef2fb; /* primary text */
+  --ink-2: #dbe3f3; /* secondary text, mono values */
+  --ink-3: #b8c4dd; /* body copy inside panes, log lines */
+  --muted: #8896b4; /* ink-4 — meta, labels, quiet actions */
+  --ink-faint: #6b779a; /* ink-5 — captions, column headers, dimmest meta */
+  --gutter: #5b678c; /* diff line numbers */
 
-  /* rules */
-  --line: #ddd6c8; /* rule — 1px hairlines */
-  --rule-2: #d6cfc0; /* screen border, chip border */
-  --rule-dotted: #c9c1b0; /* dotted leaders */
+  /* rules — light, not lines */
+  --line: rgba(255, 255, 255, 0.07); /* border-soft: default pane border, internal rules */
+  --rule-2: rgba(255, 255, 255, 0.09); /* stronger pane border, dividers */
+  --rule-dotted: rgba(255, 255, 255, 0.16); /* border-strong: key caps, outline buttons */
+  --chrome-rule: #17203a; /* 1px rule under the top bar */
+  --screen-border: #1c2742;
 
   /* the one live mark */
-  --accent: #b4531f;
-  --accent-hover: #8e3f16;
-  --link: #b4531f;
+  --accent: #e8b04b;
+  --accent-hover: #f2c268;
+  --accent-ink: #1a1408; /* text on a gold fill */
+  --accent-dim: #b98833; /* the dark stripe in the progress bar */
+  --accent-tint: rgba(232, 176, 75, 0.12);
+  --accent-line: rgba(232, 176, 75, 0.34);
+  --link: #e8b04b;
 
   /* semantic */
-  --ok: #2f6b45;
-  --danger: #a32b21;
-  --danger-tint: #f6ece9;
-  --danger-deep: #5c1512;
-  --warn: #96631a;
-  --warn-tint: #f6f0e2;
+  --ok: #59d3a4;
+  --ok-tint: rgba(89, 211, 164, 0.14);
+  --danger: #ff7860;
+  --danger-ink: #ff9f8c;
+  --danger-tint: rgba(255, 120, 96, 0.11);
+  --danger-line: rgba(255, 120, 96, 0.28);
+  --danger-deep: #ffcabe; /* evidence ink — text ON a danger tint */
+  --warn: #e8b04b; /* awaiting shares the gold */
+  --warn-tint: rgba(232, 176, 75, 0.1);
+  --blocker: #7a2b22;
 
   /* diff */
-  --diff-add: #e7efe6;
-  --diff-del: #f7e6e3;
-  --diff-del-ink: #7a2d24;
+  --diff-add: rgba(89, 211, 164, 0.1);
+  --diff-add-ink: #a9e8cf;
+  --diff-del: rgba(255, 120, 96, 0.1);
+  --diff-del-ink: #ffb3a3;
 
   /*
-   * Status pairs. Colour is never the whole signal — every status also carries a word and a
-   * shape (see `.mark-*` below), which is what keeps it readable for a red-green colour-blind
-   * reader and in a greyscale screenshot.
+   * Status pairs — the pill fills. Colour is never the whole signal: every status also carries
+   * a word AND a dot shape (see `.mark-*` below).
    */
-  --running-fg: #b4531f;
-  --running-bg: #f1ece0;
-  --done-fg: #2f6b45;
-  --done-bg: #eef2ea;
-  --error-fg: #a32b21;
-  --error-bg: #f6ece9;
-  --cancelled-fg: #8a8378;
-  --cancelled-bg: #f1ece0;
-  --awaiting-fg: #96631a;
-  --awaiting-bg: #f6f0e2;
+  --running-fg: #e8b04b;
+  --running-bg: rgba(232, 176, 75, 0.14);
+  --done-fg: #59d3a4;
+  --done-bg: rgba(89, 211, 164, 0.14);
+  --error-fg: #ff9f8c;
+  --error-bg: rgba(255, 120, 96, 0.14);
+  --cancelled-fg: #8896b4;
+  --cancelled-bg: rgba(255, 255, 255, 0.06);
+  --awaiting-fg: #e8b04b;
+  --awaiting-bg: rgba(232, 176, 75, 0.1);
 }
 
 @theme inline {
@@ -77,6 +96,13 @@
   --color-surface-2: var(--surface-2);
   --color-paper-hover: var(--paper-hover);
   --color-canvas: var(--canvas);
+  --color-pane-raised: var(--pane-raised);
+  --color-pane-header: var(--pane-header);
+  --color-pane-quiet: var(--pane-quiet);
+  --color-pane-sunken: var(--pane-sunken);
+  --color-chip-fill: var(--chip-fill);
+  --color-chrome-fill: var(--chrome-fill);
+  --color-drawer: var(--drawer);
 
   --color-fg: var(--fg);
   --color-ink-2: var(--ink-2);
@@ -88,19 +114,27 @@
   --color-line: var(--line);
   --color-rule-2: var(--rule-2);
   --color-rule-dotted: var(--rule-dotted);
+  --color-chrome-rule: var(--chrome-rule);
 
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-line: var(--accent-line);
   --color-link: var(--link);
 
   --color-ok: var(--ok);
+  --color-ok-tint: var(--ok-tint);
   --color-danger: var(--danger);
+  --color-danger-ink: var(--danger-ink);
   --color-danger-tint: var(--danger-tint);
+  --color-danger-line: var(--danger-line);
   --color-danger-deep: var(--danger-deep);
   --color-warn: var(--warn);
   --color-warn-tint: var(--warn-tint);
 
   --color-diff-add: var(--diff-add);
+  --color-diff-add-ink: var(--diff-add-ink);
   --color-diff-del: var(--diff-del);
   --color-diff-del-ink: var(--diff-del-ink);
 
@@ -115,252 +149,359 @@
   --color-awaiting-fg: var(--awaiting-fg);
   --color-awaiting-bg: var(--awaiting-bg);
 
-  /* `--font-archivo` / `--font-martian` are injected by next/font in layout.tsx. */
-  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+  /* `--font-urbanist` / `--font-martian` are injected by next/font in layout.tsx. */
+  --font-sans: var(--font-urbanist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
   --font-mono: var(--font-martian), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace;
-
-  --radius-none: 0px;
 }
 
 /*
  * NOTE: there is deliberately no `overflow-x: hidden` on <html>. It would make the "does the page
  * scroll sideways" check pass while the content was simply clipped off-screen. Wide things (the
- * diff, the log, the ledger table) each scroll inside their own box instead.
+ * diff, the log, the case table) each scroll inside their own box instead.
  */
 body {
-  background: var(--bg);
+  background: linear-gradient(var(--bg-top), var(--bg)) fixed;
   color: var(--fg);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.6;
 }
 
-/* Radius 0 everywhere — the design has no rounded corners at all. */
-*,
-*::before,
-*::after {
-  border-radius: 0 !important;
-}
-
 /*
  * Everything below lives in `@layer components` on purpose. Tailwind v4 puts its utilities in a
  * later layer, so a plain `.mono { letter-spacing: -0.045em }` written outside any layer would
- * outrank `tracking-[-0.03em]` no matter the class order — the helper would silently win and the
- * override would look like it had no effect. In the components layer these are defaults that any
- * utility can override, which is what every caller expects.
+ * outrank `tracking-[-0.03em]` no matter the class order. In the components layer these are
+ * defaults that any utility can override, which is what every caller expects.
  */
 @layer components {
   /* -------------------------------------------------------------- type helpers */
 
   /* Martian Mono is wide; every mono run carries negative tracking (handoff § Type). */
   .mono {
-  font-family: var(--font-mono);
-  letter-spacing: -0.045em;
-}
-
-/* field label / small caps */
-.label {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
-/* table column header */
-.colhead {
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-/* status word next to a mark */
-.statusword {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  text-transform: uppercase;
-}
-
-/* button label */
-.btnlabel {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/*
- * A ≥44px touch target below 900px, its natural height above.
- *
- * Handoff § Accessibility: "mobile rows and actions must stay ≥44px tall on the 375 layout". The
- * ledger spells this out inline (`min-h-11 min-[900px]:min-h-0`) on every one of its controls; the
- * task-detail screens carry the same rule as a class, because a 10px mono label is a 16px-tall
- * target and there are two dozen of them — tabs, filter chips, artifact links, every COPY. 900px
- * is the same breakpoint the ledger switches layouts at.
- */
-.tap {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-}
-@media (min-width: 900px) {
-  .tap {
-    min-height: 0;
+    font-family: var(--font-mono);
+    letter-spacing: -0.045em;
   }
-}
 
-.title-screen {
-  font-size: 46px;
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
-}
+  /* field label / small caps */
+  .label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
 
-.title-section {
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
+  /* table column header */
+  .colhead {
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
 
-.title-verdict {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
+  /* status word next to a mark */
+  .statusword {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
 
-/* ---------------------------------------------------------------- marks */
+  /* button label */
+  .btnlabel {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
 
-/*
- * A status is a 7px square whose SHAPE carries the meaning as much as its colour: solid for
- * running/done, hatched for error, hollow for awaiting, dashed for cancelled. Always render it
- * next to its word — `.mark-*` on its own is not a label.
- */
-.mark {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  flex: none;
-}
-.mark-running {
-  background: var(--accent);
-  animation: tick 1.4s ease-in-out infinite;
-}
-.mark-done {
-  background: var(--ok);
-}
-/*
- * A solid 45° hatch, no box: the reference draws it as a 2px/4px stripe with no border, and this
- * mark sits on four different surfaces (paper, tint, danger-tint, card) — so the gaps are
- * `transparent` rather than one hard-coded background colour.
- */
-.mark-error {
-  background: repeating-linear-gradient(45deg, var(--danger) 0 2px, transparent 2px 4px);
-}
-.mark-awaiting {
-  border: 1.5px solid var(--warn);
-}
-.mark-cancelled {
-  border: 1px dashed var(--muted);
-}
-.mark-blocker {
-  background: var(--danger-deep);
-}
-.mark-major {
-  background: var(--danger);
-}
-.mark-minor {
-  border: 1.5px solid var(--warn);
-}
-.mark-nit {
-  border: 1px dashed var(--muted);
-}
+  /*
+   * A ≥44px touch target below 900px, its natural height above (handoff § Responsive:
+   * "Touch targets ≥44px"). 900px is where the workspace collapses to one column.
+   */
+  .tap {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  @media (min-width: 900px) {
+    .tap {
+      min-height: 0;
+    }
+  }
 
-/* ---------------------------------------------------------------- surfaces */
+  .title-screen {
+    font-size: 44px;
+    font-weight: 700;
+    letter-spacing: -0.045em;
+    line-height: 1.05;
+  }
 
-/* command / evidence block: tint + 3px ink left border (handoff § Geometry) */
-.cmd-strip {
-  background: var(--surface-2);
-  border-left: 3px solid var(--fg);
-}
+  .title-section {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
 
-/* dotted leader that fills the gap in a contents row */
-.leader {
-  flex: 1 1 auto;
-  border-bottom: 1px dotted var(--rule-dotted);
-  margin: 0 12px;
-  transform: translateY(-3px);
-}
+  .title-verdict {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+  }
 
-/* fields are underlines, not boxes */
-.field {
-  width: 100%;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 8px;
-  color: var(--fg);
-  outline: none;
-}
-.field:not(:placeholder-shown) {
-  border-bottom-color: var(--fg);
-}
-.field:focus {
-  border-bottom-color: var(--accent);
-}
+  /* ---------------------------------------------------------------- panes */
 
-/*
- * The same underline, carried by the ROW instead of the input.
- *
- * Artboard 03 runs the base-ref rule across the whole slip, passing UNDER the `develop` / `HEAD~1`
- * quick-ref chips so they sit on the field's own line — one ruled line per field. A border on the
- * input alone stopped short of the chips and left them floating over nothing. The three states are
- * `.field`'s, read off the input inside the row; the order here is the cascade order, so focus
- * wins over filled exactly as it does above.
- */
-.field-row {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 9px;
-}
-.field-row:has(input:not(:placeholder-shown)) {
-  border-bottom-color: var(--fg);
-}
-.field-row:has(input:focus) {
-  border-bottom-color: var(--accent);
-}
-.field-row-error,
-.field-row-error:has(input:not(:placeholder-shown)),
-.field-row-error:has(input:focus) {
-  border-bottom-color: var(--danger);
-}
-/* The input inside a `.field-row` — no rule of its own; the row draws it. */
-.field-bare {
-  width: 100%;
-  background: transparent;
-  border: 0;
-  color: var(--fg);
-  outline: none;
-}
+  /*
+   * The frosted surfaces (handoff § Colour + § Geometry). Hierarchy is light + elevation:
+   * `pane-live` is the ONE pane per screen with the gold border and the big shadow.
+   */
+  .pane {
+    background: var(--surface);
+    border: 1px solid var(--rule-2);
+    border-radius: 18px;
+  }
+  .pane-quiet {
+    background: var(--pane-quiet);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+  }
+  .pane-sunken {
+    background: var(--pane-sunken);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+  }
+  .pane-head {
+    background: var(--pane-header);
+    border: 1px solid var(--rule-2);
+    border-radius: 20px;
+    box-shadow: 0 24px 52px -34px #000;
+  }
+  .pane-live {
+    background: var(--pane-raised);
+    border: 1px solid var(--accent-line);
+    border-radius: 20px;
+    box-shadow: 0 30px 60px -34px #000;
+  }
+  .pane-card {
+    background: var(--surface);
+    border: 1px solid var(--rule-2);
+    border-radius: 18px;
+    box-shadow: 0 18px 40px -30px #000;
+    transition:
+      transform 0.2s,
+      border-color 0.2s,
+      box-shadow 0.2s,
+      background-color 0.2s;
+  }
+  .pane-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--rule-dotted);
+    box-shadow: 0 24px 48px -30px #000;
+  }
 
-/* the three surfaces that are allowed a shadow */
-.shadow-slip-right {
-  box-shadow: -24px 0 48px -36px #17150f;
-}
-.shadow-slip-center {
-  box-shadow: 0 20px 44px -34px #17150f;
-}
+  /* code / command / log / evidence block */
+  .plate {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+  }
+
+  /* switcher pill, key caps */
+  .chip {
+    background: var(--chip-fill);
+    border: 1px solid var(--rule-dotted);
+    border-radius: 11px;
+  }
+
+  /* the status pill: dot + word inside a tinted 20px pill (handoff § Colour) */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 20px;
+    padding: 4px 11px;
+  }
+
+  /* ---------------------------------------------------------------- marks */
+
+  /*
+   * A status is a 7px DISC whose SHAPE carries the meaning as much as its colour: solid for
+   * done/running, hollow for awaiting/minor, dashed for cancelled/nit. Always rendered next to
+   * its word — `.mark-*` on its own is not a label.
+   */
+  .mark {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-radius: 50%;
+  }
+  .mark-running {
+    background: var(--accent);
+    animation: halo 2.6s ease-out infinite;
+  }
+  .mark-done {
+    background: var(--ok);
+  }
+  .mark-error {
+    background: var(--danger);
+  }
+  .mark-awaiting {
+    border: 1.5px solid var(--accent);
+  }
+  .mark-cancelled {
+    border: 1px dashed var(--muted);
+  }
+  .mark-blocker {
+    background: var(--blocker);
+  }
+  .mark-major {
+    background: var(--danger);
+  }
+  .mark-minor {
+    border: 1.5px solid var(--accent);
+  }
+  .mark-nit {
+    border: 1px dashed var(--muted);
+  }
+
+  /* ---------------------------------------------------------------- surfaces */
+
+  /* command / evidence block: a plate with a gold `$` (the caller renders the $) */
+  .cmd-strip {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+
+  /* dotted leader that fills the gap in a contents row (kept for stacked layouts) */
+  .leader {
+    flex: 1 1 auto;
+    border-bottom: 1px dotted var(--rule-dotted);
+    margin: 0 12px;
+    transform: translateY(-3px);
+  }
+
+  /*
+   * Fields are PLATES, not underlines (handoff § Geometry): plate background, 1px soft border,
+   * radius 12. Filled darkens the plate and strengthens the border; focus is the gold border +
+   * gold ring; invalid is coral on a coral tint.
+   */
+  .field {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 13px;
+    color: var(--fg);
+    outline: none;
+    transition:
+      border-color 0.18s,
+      box-shadow 0.18s,
+      background-color 0.18s;
+  }
+  .field:not(:placeholder-shown) {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .field:focus {
+    border-color: var(--accent-line);
+    box-shadow: 0 0 0 4px rgba(232, 176, 75, 0.07);
+  }
+
+  /* The same plate, carried by a ROW that also holds quick-ref chips (the base-ref field). */
+  .field-row {
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 8px 13px;
+    transition:
+      border-color 0.18s,
+      box-shadow 0.18s;
+  }
+  .field-row:has(input:not(:placeholder-shown)) {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  .field-row:has(input:focus) {
+    border-color: var(--accent-line);
+    box-shadow: 0 0 0 4px rgba(232, 176, 75, 0.07);
+  }
+  .field-row-error,
+  .field-row-error:has(input:not(:placeholder-shown)),
+  .field-row-error:has(input:focus) {
+    border-color: var(--danger-line);
+    background: var(--danger-tint);
+  }
+  /* The input inside a `.field-row` — no plate of its own; the row draws it. */
+  .field-bare {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    color: var(--fg);
+    outline: none;
+  }
+
+  /* the docked / floating surfaces */
+  .shadow-slip-right {
+    box-shadow: -40px 0 80px -40px #000;
+  }
+  .shadow-slip-center {
+    box-shadow: 0 40px 80px -40px #000;
+  }
+
+  /* the striped live progress bar (handoff § Motion: `seep`) */
+  .seep-bar {
+    background: repeating-linear-gradient(
+      90deg,
+      var(--accent) 0 8px,
+      var(--accent-dim) 8px 16px
+    );
+    background-size: 22px 100%;
+    animation: seep 1.1s linear infinite;
+  }
+
+  /* screenshot / video placeholder hatch */
+  .hatch {
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.05) 0 7px,
+      rgba(255, 255, 255, 0.02) 7px 14px
+    );
+    border: 1px solid var(--rule-2);
+    border-radius: 14px;
+  }
 }
 
 /* ---------------------------------------------------------------- motion */
 
+@keyframes halo {
+  0% {
+    box-shadow: 0 0 0 0 rgba(232, 176, 75, 0.32);
+  }
+  65% {
+    box-shadow: 0 0 0 11px rgba(232, 176, 75, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 11px rgba(232, 176, 75, 0);
+  }
+}
+@keyframes blip {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.28;
+  }
+}
 @keyframes tick {
   0%,
   100% {
@@ -383,11 +524,19 @@ body {
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+@keyframes seep {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 22px 0;
   }
 }
 @keyframes draw {
@@ -424,35 +573,44 @@ body {
 }
 
 @layer components {
-.anim-caret {
-  animation: caret 1s step-end infinite;
-}
-.anim-rise {
-  animation: rise 0.35s ease-out;
-}
-.anim-draw {
-  transform-origin: left;
-  animation: draw 0.85s cubic-bezier(0.2, 0.8, 0.3, 1);
-}
-.anim-stamp {
-  animation: stamp 0.5s cubic-bezier(0.2, 1.5, 0.4, 1);
-}
-.anim-flip {
-  animation: flip 0.35s ease-out;
-}
+  .anim-caret {
+    animation: caret 1s step-end infinite;
+  }
+  .anim-rise {
+    animation: rise 0.55s ease-out;
+  }
+  .anim-blip {
+    animation: blip 1.4s ease-in-out infinite;
+  }
+  .anim-draw {
+    transform-origin: left;
+    animation: draw 0.85s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+  .anim-stamp {
+    animation: stamp 0.5s cubic-bezier(0.2, 1.5, 0.4, 1);
+  }
+  .anim-flip {
+    animation: flip 0.35s ease-out;
+  }
 }
 
 /*
- * Reduced motion drops the decoration and keeps the information: the running square stops
- * pulsing but stays solid accent, and values still update.
+ * Reduced motion drops the decoration and keeps the information: the running disc stops
+ * pulsing but stays solid gold, and values still update (handoff § Accessibility).
  */
 @media (prefers-reduced-motion: reduce) {
   .mark-running,
+  .seep-bar,
   .anim-caret,
   .anim-rise,
+  .anim-blip,
   .anim-draw,
   .anim-stamp,
   .anim-flip {
     animation: none !important;
+  }
+  .pane-card,
+  .pane-card:hover {
+    transform: none;
   }
 }

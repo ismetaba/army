@@ -85,14 +85,17 @@ export function DesignPanel({ run }: { run: RunManifest }) {
 
       <div className="flex min-w-0 flex-col gap-[26px]">
         {awaiting ? (
-          <div className="flex min-w-0 flex-col gap-3 border-l-4 border-warn bg-warn-tint px-[18px] py-4">
-            <span
-              className="mono text-[9px] font-medium text-warn uppercase"
-              style={{ letterSpacing: "0.14em" }}
-            >
-              awaiting feedback
+          <div className="flex min-w-0 flex-col gap-2.5 rounded-[16px] border border-accent-line bg-warn-tint px-[18px] py-4">
+            <span className="flex items-center gap-2">
+              <span aria-hidden className="mark mark-awaiting" />
+              <span
+                className="mono text-[9px] font-medium text-warn uppercase"
+                style={{ letterSpacing: "0.14em" }}
+              >
+                awaiting feedback
+              </span>
             </span>
-            <p className="text-[12.5px] leading-[1.55] text-ink-2 [text-wrap:pretty]">
+            <p className="text-[12.5px] leading-[1.55] text-ink-3 [text-wrap:pretty]">
               The loop stopped here on purpose. It resumes when you send a note back.
             </p>
           </div>
@@ -132,7 +135,7 @@ function TextList({
   testId: string;
 }) {
   return (
-    <section className="flex min-w-0 flex-col gap-3" data-design-list={testId}>
+    <section className="pane-quiet flex min-w-0 flex-col gap-3 rounded-[18px]! p-5" data-design-list={testId}>
       <LabelHead>
         {title}
         {items.length > 0 ? ` · ${items.length}` : ""}
@@ -167,7 +170,10 @@ function TextList({
  */
 function FeedbackHistory({ items }: { items: readonly string[] }) {
   return (
-    <section className="flex min-w-0 flex-col gap-3" data-design-list="feedback-history">
+    <section
+      className="pane-quiet flex min-w-0 flex-col gap-3 rounded-[18px]! p-5"
+      data-design-list="feedback-history"
+    >
       <LabelHead>feedback history{items.length > 0 ? ` · ${items.length}` : ""}</LabelHead>
       {items.length === 0 ? (
         <p className="text-[12.5px] leading-[1.55] text-ink-2">

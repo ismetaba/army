@@ -63,12 +63,15 @@ interface FormState {
   defaultsProvider: string;
   defaultsModel: string;
   agents: Record<string, AgentRow>;
+  backendRepo: string;
   backendStart: string;
   backendPort: string;
+  backendUrl: string;
   backendHealthPath: string;
+  frontendRepo: string;
   frontendStart: string;
   frontendPort: string;
-  baseUrl: string;
+  frontendUrl: string;
   stagingUrl: string;
   testUser: string;
   passEnv: string;
@@ -105,19 +108,24 @@ function toFormState(config: Record<string, unknown>): FormState {
     };
   }
   const offLimits = at(config, ["offLimits"]);
+  // T23 target shape — the server hands the config over pre-migrated, so these are the only
+  // paths this form ever needs to read.
   return {
     defaultsProvider: text(config, ["defaults", "provider"]),
     defaultsModel: text(config, ["defaults", "model"]),
     agents,
-    backendStart: text(config, ["app", "backend", "start"]),
-    backendPort: text(config, ["app", "backend", "port"]),
-    backendHealthPath: text(config, ["app", "backend", "healthPath"]),
-    frontendStart: text(config, ["app", "frontend", "start"]),
-    frontendPort: text(config, ["app", "frontend", "port"]),
-    baseUrl: text(config, ["app", "baseUrl"]),
-    stagingUrl: text(config, ["app", "stagingUrl"]),
-    testUser: text(config, ["app", "testAccount", "user"]),
-    passEnv: text(config, ["app", "testAccount", "passEnv"]),
+    backendRepo: text(config, ["backend", "repoRoot"]),
+    backendStart: text(config, ["backend", "start"]),
+    backendPort: text(config, ["backend", "port"]),
+    backendUrl: text(config, ["backend", "url"]),
+    backendHealthPath: text(config, ["backend", "healthPath"]),
+    frontendRepo: text(config, ["frontend", "repoRoot"]),
+    frontendStart: text(config, ["frontend", "start"]),
+    frontendPort: text(config, ["frontend", "port"]),
+    frontendUrl: text(config, ["frontend", "url"]),
+    stagingUrl: text(config, ["stagingUrl"]),
+    testUser: text(config, ["testAccount", "user"]),
+    passEnv: text(config, ["testAccount", "passEnv"]),
     mobileWidth: text(config, ["viewports", "mobile", "width"]),
     mobileHeight: text(config, ["viewports", "mobile", "height"]),
     desktopWidth: text(config, ["viewports", "desktop", "width"]),
@@ -157,28 +165,43 @@ function toPatch(state: FormState): Record<string, unknown> {
     agents[name] = { provider, model };
   }
 
-  const backend =
-    orNull(state.backendStart) === null
-      ? null
-      : {
-          start: state.backendStart.trim(),
-          port: numberOrRaw(state.backendPort),
-          healthPath: orNull(state.backendHealthPath),
-        };
-  const frontend =
-    orNull(state.frontendStart) === null
-      ? null
-      : { start: state.frontendStart.trim(), port: numberOrRaw(state.frontendPort) };
+  // T23: a target with NO field filled in is simply absent (`null` deletes the key — nothing
+  // writes an empty object). A target with anything in it keeps every field, so a repo folder
+  // left blank surfaces as the server's own "needs its repo folder" error instead of silently
+  // dropping the values that were typed.
+  const blank = (values: string[]): boolean => values.every((v) => v.trim() === "");
+  const backend = blank([
+    state.backendRepo,
+    state.backendStart,
+    state.backendPort,
+    state.backendUrl,
+    state.backendHealthPath,
+  ])
+    ? null
+    : {
+        repoRoot: orNull(state.backendRepo),
+        start: orNull(state.backendStart),
+        port: numberOrRaw(state.backendPort),
+        url: orNull(state.backendUrl),
+        healthPath: orNull(state.backendHealthPath),
+      };
+  const frontend = blank([
+    state.frontendRepo,
+    state.frontendStart,
+    state.frontendPort,
+    state.frontendUrl,
+  ])
+    ? null
+    : {
+        repoRoot: orNull(state.frontendRepo),
+        start: orNull(state.frontendStart),
+        port: numberOrRaw(state.frontendPort),
+        url: orNull(state.frontendUrl),
+      };
   const testAccount =
     orNull(state.testUser) === null && orNull(state.passEnv) === null
       ? null
       : { user: state.testUser.trim(), passEnv: state.passEnv.trim() };
-  const baseUrl = orNull(state.baseUrl);
-  const stagingUrl = orNull(state.stagingUrl);
-  const app =
-    backend === null && frontend === null && testAccount === null && baseUrl === null && stagingUrl === null
-      ? null
-      : { backend, frontend, baseUrl, stagingUrl, testAccount };
 
   const offLimits = state.offLimits
     .split("\n")
@@ -188,7 +211,10 @@ function toPatch(state: FormState): Record<string, unknown> {
   return {
     defaults: { provider: state.defaultsProvider, model: state.defaultsModel.trim() },
     agents: anyAgent ? agents : null,
-    app,
+    backend,
+    frontend,
+    testAccount,
+    stagingUrl: orNull(state.stagingUrl),
     viewports: {
       mobile: { width: numberOrRaw(state.mobileWidth), height: numberOrRaw(state.mobileHeight) },
       desktop: { width: numberOrRaw(state.desktopWidth), height: numberOrRaw(state.desktopHeight) },
@@ -301,7 +327,7 @@ export function ConfigForm({
       className="flex min-w-0 flex-col gap-10"
       data-testid="config-form"
     >
-      <SettingsSection id="defaults" title="Defaults" aside="used by every task unless overridden">
+      <SettingsSection id="defaults" title="Defaults" aside="used by every task unless overridden" raised>
         <div className="grid min-w-0 grid-cols-1 gap-6 sm:grid-cols-[1fr_1.4fr] sm:gap-8">
           <SettingsField label="provider" htmlFor="defaults-provider" error={issueFor("defaults.provider")}>
             <UnderlineSelect
@@ -394,85 +420,146 @@ export function ConfigForm({
         </SettingsField>
       </SettingsSection>
 
-      <SettingsSection id="app" title="App" aside="how the panel starts and reaches your app">
+      <SettingsSection id="app" title="App" aside="two target sets — each workflow picks its own">
+        {/* T23: a workspace carries up to TWO targets, each with its OWN repo — the backend and
+            the frontend legitimately live in different repositories. review + test-feature act
+            in the backend's repo; design-loop acts in the frontend's. */}
+        <SubHead aside="review and test-feature act here">backend</SubHead>
         <div className="grid min-w-0 grid-cols-1 gap-7 sm:grid-cols-2 sm:gap-x-8">
-          <SettingsField label="backend start" htmlFor="backend-start" error={issueFor("app.backend.start")}>
+          <div className="min-w-0 sm:col-span-2">
+            <SettingsField
+              label="repo folder"
+              htmlFor="backend-repo"
+              error={issueFor("backend.repoRoot")}
+            >
+              <UnderlineInput
+                id="backend-repo"
+                value={state.backendRepo}
+                onChange={(v) => set("backendRepo", v)}
+                placeholder="/Users/you/code/your-api (empty = no backend target)"
+                invalid={issueFor("backend.repoRoot") !== undefined}
+              />
+            </SettingsField>
+          </div>
+          <SettingsField label="start command" htmlFor="backend-start" error={issueFor("backend.start")}>
             <UnderlineInput
               id="backend-start"
               value={state.backendStart}
               onChange={(v) => set("backendStart", v)}
               placeholder="npm run dev:api"
-              invalid={issueFor("app.backend.start") !== undefined}
+              invalid={issueFor("backend.start") !== undefined}
             />
           </SettingsField>
-          <SettingsField label="backend port" htmlFor="backend-port" error={issueFor("app.backend.port")}>
+          <SettingsField label="port" htmlFor="backend-port" error={issueFor("backend.port")}>
             <UnderlineNumber
               id="backend-port"
               value={state.backendPort}
               onChange={(v) => set("backendPort", v)}
               placeholder="3001"
-              invalid={issueFor("app.backend.port") !== undefined}
+              invalid={issueFor("backend.port") !== undefined}
             />
           </SettingsField>
-          <SettingsField label="frontend start" htmlFor="frontend-start" error={issueFor("app.frontend.start")}>
+          <SettingsField
+            label="url"
+            note="empty = http://localhost:<port>"
+            htmlFor="backend-url"
+            error={issueFor("backend.url")}
+          >
             <UnderlineInput
-              id="frontend-start"
-              value={state.frontendStart}
-              onChange={(v) => set("frontendStart", v)}
-              placeholder="npm run dev"
-              invalid={issueFor("app.frontend.start") !== undefined}
-            />
-          </SettingsField>
-          <SettingsField label="frontend port" htmlFor="frontend-port" error={issueFor("app.frontend.port")}>
-            <UnderlineNumber
-              id="frontend-port"
-              value={state.frontendPort}
-              onChange={(v) => set("frontendPort", v)}
-              placeholder="5173"
-              invalid={issueFor("app.frontend.port") !== undefined}
-            />
-          </SettingsField>
-          <SettingsField label="base url" htmlFor="base-url" error={issueFor("app.baseUrl")}>
-            <UnderlineInput
-              id="base-url"
-              value={state.baseUrl}
-              onChange={(v) => set("baseUrl", v)}
+              id="backend-url"
+              value={state.backendUrl}
+              onChange={(v) => set("backendUrl", v)}
               placeholder="http://localhost:3001"
-              invalid={issueFor("app.baseUrl") !== undefined}
+              invalid={issueFor("backend.url") !== undefined}
             />
           </SettingsField>
-          <SettingsField label="health path" htmlFor="backend-health" error={issueFor("app.backend.healthPath")}>
+          <SettingsField label="health path" htmlFor="backend-health" error={issueFor("backend.healthPath")}>
             <UnderlineInput
               id="backend-health"
               value={state.backendHealthPath}
               onChange={(v) => set("backendHealthPath", v)}
               placeholder="/health"
-              invalid={issueFor("app.backend.healthPath") !== undefined}
+              invalid={issueFor("backend.healthPath") !== undefined}
             />
           </SettingsField>
-          <SettingsField label="staging url" htmlFor="staging-url" error={issueFor("app.stagingUrl")}>
+        </div>
+
+        <SubHead aside="design-loop acts here — may be a different repo">frontend</SubHead>
+        <div className="grid min-w-0 grid-cols-1 gap-7 sm:grid-cols-2 sm:gap-x-8">
+          <div className="min-w-0 sm:col-span-2">
+            <SettingsField
+              label="repo folder"
+              htmlFor="frontend-repo"
+              error={issueFor("frontend.repoRoot")}
+            >
+              <UnderlineInput
+                id="frontend-repo"
+                value={state.frontendRepo}
+                onChange={(v) => set("frontendRepo", v)}
+                placeholder="/Users/you/code/your-ui (empty = no frontend target)"
+                invalid={issueFor("frontend.repoRoot") !== undefined}
+              />
+            </SettingsField>
+          </div>
+          <SettingsField label="start command" htmlFor="frontend-start" error={issueFor("frontend.start")}>
+            <UnderlineInput
+              id="frontend-start"
+              value={state.frontendStart}
+              onChange={(v) => set("frontendStart", v)}
+              placeholder="npm run dev"
+              invalid={issueFor("frontend.start") !== undefined}
+            />
+          </SettingsField>
+          <SettingsField label="port" htmlFor="frontend-port" error={issueFor("frontend.port")}>
+            <UnderlineNumber
+              id="frontend-port"
+              value={state.frontendPort}
+              onChange={(v) => set("frontendPort", v)}
+              placeholder="5173"
+              invalid={issueFor("frontend.port") !== undefined}
+            />
+          </SettingsField>
+          <SettingsField
+            label="url"
+            note="empty = http://localhost:<port>"
+            htmlFor="frontend-url"
+            error={issueFor("frontend.url")}
+          >
+            <UnderlineInput
+              id="frontend-url"
+              value={state.frontendUrl}
+              onChange={(v) => set("frontendUrl", v)}
+              placeholder="http://localhost:5173"
+              invalid={issueFor("frontend.url") !== undefined}
+            />
+          </SettingsField>
+        </div>
+
+        <SubHead aside="workspace-wide, not per-target">access</SubHead>
+        <div className="grid min-w-0 grid-cols-1 gap-7 sm:grid-cols-2 sm:gap-x-8">
+          <SettingsField label="staging url" htmlFor="staging-url" error={issueFor("stagingUrl")}>
             <UnderlineInput
               id="staging-url"
               value={state.stagingUrl}
               onChange={(v) => set("stagingUrl", v)}
               placeholder="(none — production is never a target)"
-              invalid={issueFor("app.stagingUrl") !== undefined}
+              invalid={issueFor("stagingUrl") !== undefined}
             />
           </SettingsField>
-          <SettingsField label="test account user" htmlFor="test-user" error={issueFor("app.testAccount.user")}>
+          <SettingsField label="test account user" htmlFor="test-user" error={issueFor("testAccount.user")}>
             <UnderlineInput
               id="test-user"
               value={state.testUser}
               onChange={(v) => set("testUser", v)}
               placeholder="test@example.com"
-              invalid={issueFor("app.testAccount.user") !== undefined}
+              invalid={issueFor("testAccount.user") !== undefined}
             />
           </SettingsField>
           <SettingsField
             label="password env var"
             note="name only, never the value"
             htmlFor="pass-env"
-            error={issueFor("app.testAccount.passEnv")}
+            error={issueFor("testAccount.passEnv")}
           >
             <UnderlineInput
               id="pass-env"
@@ -481,7 +568,7 @@ export function ConfigForm({
               placeholder="AW_TEST_PASSWORD"
               autoComplete="off"
               describedBy="pass-env-note"
-              invalid={issueFor("app.testAccount.passEnv") !== undefined}
+              invalid={issueFor("testAccount.passEnv") !== undefined}
             />
           </SettingsField>
         </div>

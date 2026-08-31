@@ -199,7 +199,7 @@ function ScreenSection({ group, onOpen }: { group: ScreenGroup; onOpen: OpenFn }
   const shots = SHOWN.filter((v) => group[v] !== null).length;
   return (
     <section
-      className="flex min-w-0 flex-col gap-3.5"
+      className="pane flex min-w-0 flex-col gap-3.5 rounded-[20px]! p-5"
       data-screen-card
       data-screen={group.screen}
     >
@@ -337,7 +337,7 @@ function Cell({
         <figcaption className="colhead">{label}</figcaption>
         <div
           data-shot-missing={shot === null ? "not-captured" : "file-missing"}
-          className={`${box} flex flex-col items-center justify-center gap-1 border border-dashed border-rule-2 px-3 text-center`}
+          className={`${box} hatch flex flex-col items-center justify-center gap-1 px-3 text-center`}
         >
           <span className="mono text-[9px] text-muted">
             {shot === null ? "not captured" : "file missing"}
@@ -362,7 +362,7 @@ function Cell({
         title={`${caption} — open full size`}
         data-shot
         data-viewport={viewport}
-        className={`${box} cursor-zoom-in border border-line bg-surface-2 transition-colors duration-[180ms] hover:border-accent focus-visible:border-accent`}
+        className={`${box} cursor-zoom-in overflow-hidden rounded-[14px] border border-line bg-surface-2 transition-colors duration-[180ms] hover:border-accent-line focus-visible:border-accent`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- see the file header: next/image
             would re-fetch and cache a local artifact for no gain. */}

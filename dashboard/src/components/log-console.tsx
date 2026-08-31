@@ -46,7 +46,7 @@ export function LogConsole({
       ref={boxRef}
       onScroll={onScroll}
       data-live-output
-      className={`min-w-0 overflow-auto border-l-[3px] border-fg bg-surface-2 px-5 py-[18px] ${height}`}
+      className={`plate min-w-0 overflow-auto rounded-[18px]! px-5 py-[18px] ${height}`}
     >
       <div className="flex min-w-0 flex-col gap-2">
         {lines.map((line, i) => (
