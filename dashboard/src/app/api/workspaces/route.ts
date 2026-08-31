@@ -23,7 +23,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { AwConfig } from "@shared/schemas";
+import { parseAwConfig } from "@shared/schemas";
 import { fail, guardMutation, issuesOf, json, readJsonBody } from "@/lib/api-guard";
 import { toFieldIssues } from "@/lib/config-patch";
 import { addWorkspace, isWorkspaceName, removeWorkspace } from "@/lib/store";
@@ -79,7 +79,9 @@ export async function POST(request: Request): Promise<Response> {
       field: "repoRoot",
     });
   }
-  const parsed = AwConfig.safeParse(raw);
+  // `parseAwConfig`, not a bare schema parse: a pre-T23 config (repoRoot + app) must register
+  // exactly like a target-shaped one — migration on read, the file untouched.
+  const parsed = parseAwConfig(raw);
   if (!parsed.success) {
     return fail(`aw.config.json in ${resolved} is not a valid config`, 400, {
       field: "repoRoot",
@@ -95,7 +97,15 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const entry = { name, repoRoot: resolved, createdAt: new Date().toISOString() };
+  // T23: `repoRoot` stays the folder the config was FOUND in (it is what `--workspace` resolves
+  // through); the per-target roots come from the config and are what the runner spawns with.
+  const entry = {
+    name,
+    repoRoot: resolved,
+    ...(parsed.data.backend ? { backendRepo: parsed.data.backend.repoRoot } : {}),
+    ...(parsed.data.frontend ? { frontendRepo: parsed.data.frontend.repoRoot } : {}),
+    createdAt: new Date().toISOString(),
+  };
   const added = addWorkspace(entry);
   if (!added.ok) return fail(added.message, added.reason === "exists" ? 409 : 500);
   return json({ ok: true, workspace: entry }, 201);

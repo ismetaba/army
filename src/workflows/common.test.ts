@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { describeModelFailure, isContextOverflowError, providerDetail } from './common';
+import {
+  describeModelFailure,
+  isContextOverflowError,
+  isTurnLimitError,
+  providerDetail,
+} from './common';
 
 /** The shape ai@7 throws for an HTTP error from an OpenAI-compatible server. */
 function apiError(message: string, statusCode: number, responseBody: string): Error {
@@ -99,5 +104,20 @@ describe('describeModelFailure', () => {
   it('still reports a timeout as a timeout', () => {
     const text = describeModelFailure(new Error('This operation was aborted'), 'lmstudio', opts);
     expect(text).toBe('lmstudio did not finish the review within 60s.');
+  });
+});
+
+describe('isTurnLimitError', () => {
+  it('recognises the claude-cli spent-turn-budget rejection, in both spellings', () => {
+    // Observed verbatim on the first two-repo custody design-loop (2026-08-25): the CLI bridge
+    // REJECTS at maxTurns where the API providers stop gracefully via stopWhen.
+    expect(isTurnLimitError(new Error('Reached maximum number of turns (60)'))).toBe(true);
+    expect(isTurnLimitError(new Error('reached max number of turns'))).toBe(true);
+  });
+
+  it('does not swallow unrelated failures', () => {
+    expect(isTurnLimitError(new Error('fetch failed'))).toBe(false);
+    expect(isTurnLimitError(new Error('This operation was aborted'))).toBe(false);
+    expect(isTurnLimitError(null)).toBe(false);
   });
 });

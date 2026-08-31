@@ -297,8 +297,9 @@ describe('checkpoint', () => {
 const CFG: AwConfig = {
   workspace: 'fixture',
   repoRoot: '/tmp/repo',
+  frontend: { repoRoot: '/tmp/repo', port: 5173 },
+  backend: { repoRoot: '/tmp/repo', url: 'http://localhost:3001', healthPath: '/health' },
   defaults: { provider: 'lmstudio', model: 'qwen3' },
-  app: { baseUrl: 'http://localhost:3001' },
   viewports: { mobile: { width: 375, height: 812 }, desktop: { width: 1440, height: 900 } },
 };
 
@@ -345,6 +346,25 @@ describe('buildSessionPrompt', () => {
     const prompt = buildSessionPrompt(base);
     expect(prompt).toContain('never start, restart or stop a server');
     expect(prompt).toContain('never run `git commit`');
+  });
+
+  it('carries the backend contract: URL, health endpoint and the read-only backend repo (T23)', () => {
+    const cfg: AwConfig = {
+      ...CFG,
+      backend: { repoRoot: '/tmp/api', url: 'http://localhost:8080', healthPath: '/actuator/health' },
+    };
+    const prompt = buildSessionPrompt({ ...base, cfg });
+    expect(prompt).toContain('Backend API base URL (what this UI fetches from): http://localhost:8080');
+    expect(prompt).toContain('Backend health endpoint: http://localhost:8080/actuator/health');
+    expect(prompt).toContain('Backend repository (READ-ONLY');
+    expect(prompt).toContain('/tmp/api');
+  });
+
+  it('omits the backend repo line when both targets share one repo', () => {
+    // CFG's backend and frontend share /tmp/repo, so only the URL lines appear.
+    const prompt = buildSessionPrompt(base);
+    expect(prompt).toContain('Backend API base URL (what this UI fetches from): http://localhost:3001');
+    expect(prompt).not.toContain('READ-ONLY');
   });
 
   it('ends with the ordered screenshot procedure, one browser_goto per viewport', () => {

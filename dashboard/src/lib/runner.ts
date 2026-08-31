@@ -418,6 +418,33 @@ function looksLikeCli(pid: number, ws: string): boolean {
   return line.includes(`${path.sep}src${path.sep}cli.ts`) && line.includes(`--workspace ${ws}`);
 }
 
+/**
+ * The repo a triggered run starts in (T23): the primary target's root for that kind.
+ *
+ * - `design-loop` acts in the FRONTEND repo;
+ * - `test-feature` acts in the BACKEND repo;
+ * - `review` follows its (already-validated) `target` argument, defaulting to the backend.
+ *
+ * A registry entry written before T23 carries only `repoRoot`; both sides fall back to it, so a
+ * single-repo workspace behaves exactly as it always has. Pure and exported for the unit tests.
+ */
+export function runCwd(
+  entry: { repoRoot: string; backendRepo?: string; frontendRepo?: string },
+  kind: TriggerKind,
+  args: TriggerArgs,
+): string {
+  const backend = entry.backendRepo ?? entry.repoRoot;
+  const frontend = entry.frontendRepo ?? entry.repoRoot;
+  if (kind === "design-loop") return frontend;
+  if (kind === "review") {
+    const target = typeof args.target === "string" ? args.target.trim() : "";
+    if (target === "frontend") return frontend;
+    if (target === "backend") return backend;
+    return entry.backendRepo !== undefined || entry.frontendRepo === undefined ? backend : frontend;
+  }
+  return backend;
+}
+
 /** Pending transcripts older than this, belonging to no live process, are swept on the next start. */
 const PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -449,8 +476,8 @@ export function startTriggeredRun(
   kind: TriggerKind,
   args: TriggerArgs,
 ): StartResult {
-  // 1. The workspace must be a REGISTERED one, and the repo it names must exist. `repoRoot` is
-  //    the child's cwd, so it comes from `workspaces.json` and never from the request.
+  // 1. The workspace must be a REGISTERED one, and the repo it names must exist. The child's
+  //    cwd comes from `workspaces.json` (per kind — see `runCwd`) and never from the request.
   if (typeof ws !== "string" || !isWorkspaceName(ws)) {
     return { ok: false, status: 404, message: "no such workspace" };
   }
@@ -461,18 +488,27 @@ export function startTriggeredRun(
   if (!path.isAbsolute(entry.repoRoot)) {
     return { ok: false, status: 400, message: `workspace "${ws}" has no absolute repoRoot` };
   }
-  let repoRoot: string;
-  try {
-    repoRoot = fs.realpathSync(entry.repoRoot);
-    if (!fs.statSync(repoRoot).isDirectory()) throw new Error("not a directory");
-  } catch {
-    return { ok: false, status: 400, message: `the repo of workspace "${ws}" is not a directory` };
-  }
 
-  // 2. The argv, from the per-kind allowlist. Nothing else can become an argument.
+  // 2. The argv, from the per-kind allowlist. Nothing else can become an argument. Validated
+  //    BEFORE the cwd choice below, which reads the (validated) `target` out of `args`.
   const built = buildTriggerArgv(kind, args);
   if (!built.ok) {
     return { ok: false, status: 400, message: built.error.message, field: built.error.field };
+  }
+
+  // 2b. T23: spawn in the PRIMARY target's repo for this kind. This is the panel-side half of
+  //     "each spawn uses that target's own repoRoot as cwd" — and the one place a mistake means
+  //     the CLI runs in the wrong repository.
+  const chosen = runCwd(entry, kind, args);
+  if (!path.isAbsolute(chosen)) {
+    return { ok: false, status: 400, message: `workspace "${ws}" has no absolute repoRoot` };
+  }
+  let repoRoot: string;
+  try {
+    repoRoot = fs.realpathSync(chosen);
+    if (!fs.statSync(repoRoot).isDirectory()) throw new Error("not a directory");
+  } catch {
+    return { ok: false, status: 400, message: `the repo of workspace "${ws}" is not a directory` };
   }
 
   const cli = path.join(toolkitRoot(), "src", "cli.ts");

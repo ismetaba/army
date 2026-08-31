@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchRunSaved } from "./runner";
+import { matchRunSaved, runCwd } from "./runner";
 
 /**
  * The `run saved: <ws>/<runId>` marker (src/store.ts `finish`, T16 step 2) is how a triggered run
@@ -45,5 +45,38 @@ describe("matchRunSaved", () => {
     expect(matchRunSaved("run saved: ../etc/passwd\n")).toBeNull();
     expect(matchRunSaved("run saved: fixture/../other\n")).toBeNull();
     expect(matchRunSaved("the agent wrote: run saved: fixture/review-1\n")).toBeNull();
+  });
+});
+
+/**
+ * T23: the panel spawns each kind in the PRIMARY target's repo — design-loop in the frontend,
+ * test-feature in the backend, review wherever its (validated) `target` argument says. This is
+ * the panel-side half of "each spawn uses that target's own repoRoot as cwd", and the one place
+ * a mistake means the CLI runs in the wrong repository.
+ */
+describe("runCwd", () => {
+  const two = { repoRoot: "/api", backendRepo: "/api", frontendRepo: "/ui" };
+  const legacy = { repoRoot: "/one" };
+  const frontendOnly = { repoRoot: "/ui", frontendRepo: "/ui" };
+
+  it("design-loop runs in the frontend repo", () => {
+    expect(runCwd(two, "design-loop", {})).toBe("/ui");
+    expect(runCwd(legacy, "design-loop", {})).toBe("/one");
+  });
+
+  it("test-feature runs in the backend repo", () => {
+    expect(runCwd(two, "test-feature", {})).toBe("/api");
+    expect(runCwd(legacy, "test-feature", {})).toBe("/one");
+  });
+
+  it("review follows its target argument, defaulting to the backend", () => {
+    expect(runCwd(two, "review", {})).toBe("/api");
+    expect(runCwd(two, "review", { target: "backend" })).toBe("/api");
+    expect(runCwd(two, "review", { target: "frontend" })).toBe("/ui");
+    expect(runCwd(legacy, "review", {})).toBe("/one");
+  });
+
+  it("a frontend-only workspace reviews its frontend by default", () => {
+    expect(runCwd(frontendOnly, "review", {})).toBe("/ui");
   });
 });

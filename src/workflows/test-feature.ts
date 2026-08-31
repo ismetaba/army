@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { generateText, stepCountIs } from 'ai';
 import type { ToolSet } from 'ai';
-import { TestCase } from '../../shared/schemas';
-import type { AwConfig, ProviderId, Severity } from '../../shared/schemas';
+import { TestCase, targetUrl as targetBaseUrl } from '../../shared/schemas';
+import type { AwConfig, ProviderId, Severity, TargetName } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
 import { makeCoreTools } from '../tools/core';
@@ -982,10 +982,10 @@ function sameOrigin(a: URL, b: URL): boolean {
  * is, and its refused connections become FAIL cases (T09 Acceptance 2).
  */
 function targetsConfiguredBackend(target: URL, cfg: AwConfig): boolean {
-  const backend = cfg.app?.backend;
+  const backend = cfg.backend;
   if (!backend) return false;
-  if (portOf(target) === String(backend.port)) return true;
-  const base = cfg.app?.baseUrl?.trim();
+  if (backend.port !== undefined && portOf(target) === String(backend.port)) return true;
+  const base = targetBaseUrl(backend);
   if (!base) return false;
   try {
     return sameOrigin(target, new URL(base));
@@ -1008,7 +1008,7 @@ function buildPrompt(args: {
   reachable: boolean;
 }): string {
   const { desc, target, healthUrl, repoRoot, cfg, allowDestructive, reachable } = args;
-  const account = cfg.app?.testAccount;
+  const account = cfg.testAccount;
   const parts = [
     'Feature or bug report to verify:',
     desc,
@@ -1017,6 +1017,11 @@ function buildPrompt(args: {
   ];
   if (healthUrl) parts.push(`Health endpoint: ${healthUrl}`);
   parts.push(`Source repository (read-only reference): ${repoRoot}`);
+  // T23: the frontend is named only as a browser destination — the backend stays the target.
+  const frontendUi = targetBaseUrl(cfg.frontend);
+  if (frontendUi && frontendUi !== target) {
+    parts.push(`Frontend UI base URL (only for cases that need the browser_* tools): ${frontendUi}`);
+  }
   if (account) {
     // SPEC § AwConfig: the password lives in an env var and is NEVER stored or echoed.
     parts.push(
@@ -1202,16 +1207,23 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
   // reason the provider is unusable here.
   const { provider, model } = resolveModel('qa-tester', opts, cfg);
 
-  const repoRoot = cfg.repoRoot;
-  if (!fs.existsSync(repoRoot)) fail(`repoRoot does not exist: ${repoRoot}`);
+  // --- the target (T23): test-feature's primary is the BACKEND -------------------------------
+  // The backend is the thing the black-box tests exercise. A workspace with only a frontend can
+  // still be tested against an explicit --url; the frontend repo then serves as the source
+  // reference and the report directory.
+  const backend = cfg.backend;
+  const targetName: TargetName = backend ? 'backend' : 'frontend';
+  const repoRoot = backend?.repoRoot ?? cfg.repoRoot;
+  if (!fs.existsSync(repoRoot)) fail(`${targetName} repoRoot does not exist: ${repoRoot}`);
 
-  // --- target (T09 step 2) ---------------------------------------------------
-  const backend = cfg.app?.backend;
-  const rawTarget =
-    opts.url?.trim() ||
-    cfg.app?.baseUrl?.trim() ||
-    (backend ? `http://localhost:${backend.port}` : '');
-  if (!rawTarget) fail('no target: pass --url or configure app.baseUrl');
+  // --- target URL (T09 step 2) -----------------------------------------------
+  const rawTarget = opts.url?.trim() || targetBaseUrl(backend) || '';
+  if (!rawTarget) {
+    fail(
+      'no target: this workspace has no backend target — add one in settings (repo folder + ' +
+        'start command + port), or pass --url',
+    );
+  }
 
   let targetUrl: URL;
   try {
@@ -1228,7 +1240,7 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
   // Before any probe: a production URL must not even be touched by a reachability fetch.
   const local = isLocalUrl(target);
   if (!local) {
-    const staging = cfg.app?.stagingUrl?.trim();
+    const staging = cfg.stagingUrl?.trim();
     let matches = false;
     if (staging) {
       try {
@@ -1239,12 +1251,12 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
     }
     if (!matches) {
       fail(
-        `non-local target must match app.stagingUrl\n` +
-          `  target:          ${target}\n` +
-          `  app.stagingUrl:  ${staging ?? '(not configured)'}`,
+        `non-local target must match stagingUrl\n` +
+          `  target:      ${target}\n` +
+          `  stagingUrl:  ${staging ?? '(not configured)'}`,
       );
     }
-    log(`non-local target allowed: it matches app.stagingUrl (${staging})`);
+    log(`non-local target allowed: it matches stagingUrl (${staging})`);
   }
 
   // T16: from here on the run is recorded — the target is settled, so the manifest can name it,
@@ -1267,6 +1279,8 @@ export async function runTestFeature(opts: TestFeatureOptions): Promise<TestFeat
       }),
       feature: desc,
       targetUrl: target,
+      target: targetName,
+      repoRoot,
     },
   });
   setLogSink(run.log);
@@ -1312,7 +1326,7 @@ async function testFeatureSession(ctx: {
 }): Promise<TestFeatureResult> {
   const { run, opts, cfg, provider, model, repoRoot, desc, target, targetUrl, local, startedAt } =
     ctx;
-  const backend = cfg.app?.backend;
+  const backend = cfg.backend;
 
   // --- reachability / auto-start (T09 step 3) --------------------------------
   const healthUrl = joinUrl(target, backend?.healthPath ?? '/');
@@ -1322,7 +1336,9 @@ async function testFeatureSession(ctx: {
     handle = await ensureUp({
       url: healthUrl,
       start: backend.start,
-      cwd: repoRoot,
+      // T23: the backend starts in ITS OWN repo — with a two-repo workspace this is not the
+      // workspace's derived repoRoot by accident, it is the same value by construction.
+      cwd: backend.repoRoot,
       probeTimeoutMs: PROBE_TIMEOUT_MS,
       waitMs: START_WAIT_MS,
       intervalMs: START_POLL_MS,

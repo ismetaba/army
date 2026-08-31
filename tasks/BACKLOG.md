@@ -55,7 +55,7 @@ Paste this (fill `T##`):
 - [x] [T22](T22.md) — Trigger runs + live SSE logs + cancel from the UI
 
 ## Phase 8 — Structure
-- [ ] [T23](T23.md) — Split the workspace into a backend set and a frontend set (two repos, one product)
+- [x] [T23](T23.md) — Split the workspace into a backend set and a frontend set (two repos, one product) — see T23 § Acceptance status for the two consciously deferred model runs
 
 ## Milestones
 - **M1** T01–T04 · **M2** T05–T10 · **M3** T11–T12 · **M4** T13–T15 · **M5** T16–T22

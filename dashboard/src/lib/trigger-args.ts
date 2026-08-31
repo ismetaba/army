@@ -87,6 +87,8 @@ export type FieldKind =
   | "url"
   /** One of `PROVIDERS`, or empty for "whatever the config resolves to". */
   | "provider"
+  /** One of the field's own `options`, or empty for the CLI's default. A fixed enum — never an arbitrary string. */
+  | "choice"
   /** A boolean switch: present in argv as a bare `--flag`, absent otherwise. */
   | "flag";
 
@@ -103,7 +105,13 @@ export interface FieldSpec {
   maxLength?: number;
   placeholder?: string;
   help?: string;
+  /** The allowed values of a `choice` field. */
+  options?: readonly string[];
 }
+
+/** SPEC § Types — `TargetName` (T23). Written out for the same no-zod-in-the-client reason. */
+export const TARGETS = ["backend", "frontend"] as const satisfies
+  readonly NonNullable<RunManifest["input"]["target"]>[];
 
 const PROVIDER_FIELDS: FieldSpec[] = [
   {
@@ -141,6 +149,14 @@ export const FIELDS: Record<TriggerKind, readonly FieldSpec[]> = {
       maxLength: 300,
       placeholder: "main",
       help: "The diff reviewed is <base>...HEAD. Defaults to main.",
+    },
+    {
+      name: "target",
+      kind: "choice",
+      label: "Target",
+      flag: "target",
+      options: TARGETS,
+      help: "Which repo the diff belongs to. Defaults to the backend when the workspace has one.",
     },
     ...PROVIDER_FIELDS,
   ],
@@ -281,6 +297,11 @@ function cleanString(field: FieldSpec, raw: unknown): Cleaned {
 
   if (field.kind === "provider" && !(PROVIDERS as readonly string[]).includes(value)) {
     return fail(`${field.label} must be one of ${PROVIDERS.join(", ")}`, field.name);
+  }
+
+  // A `choice` is a fixed enum (T23: the review target) — never an arbitrary string.
+  if (field.kind === "choice" && !(field.options ?? []).includes(value)) {
+    return fail(`${field.label} must be one of ${(field.options ?? []).join(", ")}`, field.name);
   }
 
   if (field.kind === "url") {

@@ -28,7 +28,13 @@ import { createInterface, type Interface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import type { Command } from 'commander';
 import type { z } from 'zod';
-import { AwConfig, ProviderId, Workspace, WorkspacesFile } from '../../shared/schemas';
+import {
+  ProviderId,
+  Workspace,
+  WorkspacesFile,
+  migrateConfig,
+  parseAwConfig,
+} from '../../shared/schemas';
 import { loadGuardrails } from '../agents';
 import { awHome } from '../util';
 import { fail, write } from '../workflows/common';
@@ -311,18 +317,33 @@ export interface ClaudeBlockInput {
   awHome?: string;
   /** Name of the env var holding the test-account password — never the password itself. */
   passEnv?: string;
+  /** T23: the workspace's target repos, when it has them, and the repo holding the config. */
+  backendRepo?: string;
+  frontendRepo?: string;
+  configRepo?: string;
 }
 
 /** The block `aw init` owns in the target's `CLAUDE.md`. Deterministic: no dates, no counters. */
 export function renderClaudeBlock(input: ClaudeBlockInput): string {
   const cli = `npx tsx ${shellQuote(path.join(input.awRepoRoot, 'src/cli.ts'))}`;
+  const twoRepos =
+    input.backendRepo !== undefined &&
+    input.frontendRepo !== undefined &&
+    input.backendRepo !== input.frontendRepo;
   const lines = [
     AW_START,
     '## Agent workflows (aw)',
     '',
-    `This repo is the \`${input.workspace}\` workspace of agent-workflows`,
+    `This repo is part of the \`${input.workspace}\` workspace of agent-workflows`,
     `(\`${input.awRepoRoot}\` — that checkout path is local to whoever ran \`aw init\`).`,
-    `Settings: \`aw.config.json\`. Runs are stored under`,
+    ...(twoRepos
+      ? [
+          'The workspace spans two repositories:',
+          `- backend: \`${input.backendRepo}\` (review/test-feature run here)`,
+          `- frontend: \`${input.frontendRepo}\` (design-loop runs here)`,
+          `Settings: \`aw.config.json\` in \`${input.configRepo ?? input.backendRepo}\`. Runs are stored under`,
+        ]
+      : ['Settings: `aw.config.json`. Runs are stored under']),
     `\`${path.join(input.awHome ?? awHome(), input.workspace, 'runs')}/\`.`,
     '',
     '### Commands',
@@ -485,9 +506,11 @@ class Prompter {
 export interface InitFlags {
   repo?: string;
   name?: string;
+  backendRepo?: string;
   backendStart?: string;
   backendPort?: string;
   healthPath?: string;
+  frontendRepo?: string;
   frontendStart?: string;
   frontendPort?: string;
   baseUrl?: string;
@@ -512,7 +535,8 @@ interface PlannedCopy {
 }
 
 interface Plan {
-  repoRoot: string;
+  /** Every repo this run writes into — the primary (where `aw.config.json` lives) first. */
+  repos: string[];
   workspace: string;
   writes: PlannedWrite[];
   copies: PlannedCopy[];
@@ -520,10 +544,12 @@ interface Plan {
   registryEntry: WorkspaceEntry;
   registryContent: string;
   configAdded: string[];
-  /** The stale `repoRoot` an existing config carried, when it had to be corrected. */
-  repoRootFixed?: string;
-  gitignoreAdded: string[];
-  claudeMdAction: ClaudeMdAction;
+  /** True when an existing pre-T23 config is being rewritten into the target shape. */
+  configMigrated: boolean;
+  /** `backend.repoRoot: <stale> → <actual>` lines, when a target's path had to be corrected. */
+  repoRootFixes: string[];
+  gitignore: { repo: string; added: string[] }[];
+  claudeMd: { repo: string; action: ClaudeMdAction }[];
   passEnv?: string;
 }
 
@@ -532,9 +558,14 @@ function flag(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-function parsePort(raw: string | undefined, label: string, fallback: number): number {
+/**
+ * A port, or `undefined` for an empty/absent value. T23 dropped the "a port needs a start
+ * command" rule: a port WITHOUT a start command is meaningful now — it derives the target's
+ * URL for a server the developer starts themselves.
+ */
+function parseOptionalPort(raw: string | undefined, label: string): number | undefined {
   const value = flag(raw);
-  if (value === undefined) return fallback;
+  if (value === undefined) return undefined;
   const port = Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new InitError(`${label}: "${value}" is not a valid port (1–65535)`);
@@ -602,14 +633,42 @@ function planClaudeCopies(repoRoot: string): PlannedCopy[] {
  * Nothing on disk changes here — a failure at any point leaves the target repo exactly as found.
  */
 async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
-  const repoInput = flag(flags.repo) ?? (await prompter.ask('target repo path', process.cwd()));
-  const repoRoot = path.resolve(repoInput);
-  if (!fs.existsSync(path.join(repoRoot, '.git'))) {
-    throw new InitError(`not a git repository: ${repoRoot} (no .git found)`);
+  // --- which repos (T23) ----------------------------------------------------
+  // `--repo` is the single-repo shorthand AND the backend alias; `--backend-repo` /
+  // `--frontend-repo` describe a product whose two halves live in two repositories.
+  const repoFlag = flag(flags.repo);
+  const backendRepoFlag = flag(flags.backendRepo);
+  const frontendRepoFlag = flag(flags.frontendRepo);
+  if (repoFlag !== undefined && backendRepoFlag !== undefined) {
+    throw new InitError('pass either --repo or --backend-repo, not both (--repo IS the backend repo)');
   }
 
+  let backendInput = backendRepoFlag ?? repoFlag;
+  if (backendInput === undefined && frontendRepoFlag === undefined) {
+    backendInput = await prompter.ask('backend repo path (the main/API repo)', process.cwd());
+  }
+  const frontendInput =
+    frontendRepoFlag ?? flag(await prompter.ask('frontend repo path (empty = same repo)', ''));
+
+  /** Each named repo must exist and contain `.git` — reported by NAME, per T23 § 5. */
+  const resolveRepo = (label: 'backend' | 'frontend', input: string): string => {
+    const resolved = path.resolve(input);
+    if (!fs.existsSync(path.join(resolved, '.git'))) {
+      throw new InitError(`${label} repo is not a git repository: ${resolved} (no .git found)`);
+    }
+    return resolved;
+  };
+
+  const backendRepo = backendInput === undefined ? undefined : resolveRepo('backend', backendInput);
+  const frontendRepoExplicit =
+    frontendInput === undefined ? undefined : resolveRepo('frontend', frontendInput);
+
   const requestedName = checkWorkspaceName(
-    flag(flags.name) ?? (await prompter.ask('workspace name', path.basename(repoRoot))),
+    flag(flags.name) ??
+      (await prompter.ask(
+        'workspace name',
+        path.basename(backendRepo ?? frontendRepoExplicit ?? process.cwd()),
+      )),
   );
 
   const providerRaw = flag(flags.provider) ?? (await prompter.ask('provider', DEFAULT_PROVIDER));
@@ -624,41 +683,56 @@ async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
   // The "no --model" warning is NOT emitted here: an existing config usually wins the merge, and
   // warning before that merge announces a value that was never written. See below, after zod.
 
-  const backendStart =
-    flag(flags.backendStart) ??
-    flag(await prompter.ask('backend start command (empty = none)', ''));
-  if (!backendStart && flag(flags.backendPort)) {
-    throw new InitError('--backend-port needs --backend-start (a port alone cannot start an app)');
-  }
-  const backendPort = backendStart
-    ? parsePort(
+  // --- the backend target ---------------------------------------------------
+  const noBackend = (value: string | undefined, name: string): undefined => {
+    if (value !== undefined) {
+      throw new InitError(`${name} needs a backend repo (--repo or --backend-repo)`);
+    }
+    return undefined;
+  };
+  const backendStart = backendRepo
+    ? (flag(flags.backendStart) ??
+      flag(await prompter.ask('backend start command (empty = none)', '')))
+    : noBackend(flag(flags.backendStart), '--backend-start');
+  const backendPort = backendRepo
+    ? parseOptionalPort(
         flag(flags.backendPort) ??
-          (await prompter.ask('backend port', String(DEFAULT_BACKEND_PORT))),
+          (await prompter.ask(
+            'backend port (empty = none)',
+            backendStart ? String(DEFAULT_BACKEND_PORT) : '',
+          )),
         '--backend-port',
-        DEFAULT_BACKEND_PORT,
       )
-    : undefined;
-  const healthPath = backendStart
-    ? (flag(flags.healthPath) ?? (await prompter.ask('backend health path', DEFAULT_HEALTH_PATH)))
-    : undefined;
+    : (noBackend(flag(flags.backendPort), '--backend-port') as undefined);
+  const backendUrl = backendRepo
+    ? (flag(flags.baseUrl) ??
+      flag(await prompter.ask('backend url (empty = http://localhost:<port>)', '')))
+    : noBackend(flag(flags.baseUrl), '--base-url');
+  const healthPath =
+    backendRepo && (backendStart || backendPort !== undefined || backendUrl)
+      ? (flag(flags.healthPath) ??
+        flag(await prompter.ask('backend health path', backendStart ? DEFAULT_HEALTH_PATH : '')))
+      : noBackend(flag(flags.healthPath), '--health-path');
 
+  // --- the frontend target --------------------------------------------------
   const frontendStart =
     flag(flags.frontendStart) ??
     flag(await prompter.ask('frontend start command (empty = none)', ''));
-  if (!frontendStart && flag(flags.frontendPort)) {
-    throw new InitError('--frontend-port needs --frontend-start');
-  }
-  const frontendPort = frontendStart
-    ? parsePort(
-        flag(flags.frontendPort) ??
-          (await prompter.ask('frontend port', String(DEFAULT_FRONTEND_PORT))),
-        '--frontend-port',
-        DEFAULT_FRONTEND_PORT,
-      )
-    : undefined;
-
-  const baseUrlDefault = backendPort ? `http://localhost:${backendPort}` : '';
-  const baseUrl = flag(flags.baseUrl) ?? flag(await prompter.ask('base URL', baseUrlDefault));
+  const frontendPort = parseOptionalPort(
+    flag(flags.frontendPort) ??
+      (frontendStart || frontendRepoExplicit
+        ? await prompter.ask(
+            'frontend port (empty = none)',
+            frontendStart ? String(DEFAULT_FRONTEND_PORT) : '',
+          )
+        : undefined),
+    '--frontend-port',
+  );
+  // A frontend start/port without --frontend-repo means "the frontend lives in the same repo" —
+  // exactly what the pre-T23 flat `app` block expressed.
+  const frontendRepo =
+    frontendRepoExplicit ??
+    (frontendStart !== undefined || frontendPort !== undefined ? backendRepo : undefined);
 
   const testUser = flag(flags.testUser) ?? flag(await prompter.ask('test account user (empty = none)', ''));
   // The password is NOT asked for here, and there is no flag that could carry one.
@@ -672,32 +746,51 @@ async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
   const stagingUrl =
     flag(flags.stagingUrl) ?? flag(await prompter.ask('staging URL (empty = none)', ''));
 
-  const app: Record<string, unknown> = {};
-  if (backendStart) {
-    app.backend = { start: backendStart, port: backendPort, healthPath };
-  }
-  if (frontendStart) app.frontend = { start: frontendStart, port: frontendPort };
-  if (baseUrl) app.baseUrl = baseUrl;
-  if (testUser && passEnv) app.testAccount = { user: testUser, passEnv };
-  if (stagingUrl) app.stagingUrl = stagingUrl;
+  const backendTarget =
+    backendRepo === undefined
+      ? undefined
+      : {
+          repoRoot: backendRepo,
+          ...(backendStart ? { start: backendStart } : {}),
+          ...(backendPort !== undefined ? { port: backendPort } : {}),
+          ...(backendUrl ? { url: backendUrl } : {}),
+          ...(healthPath ? { healthPath } : {}),
+        };
+  const frontendTarget =
+    frontendRepo === undefined
+      ? undefined
+      : {
+          repoRoot: frontendRepo,
+          ...(frontendStart ? { start: frontendStart } : {}),
+          ...(frontendPort !== undefined ? { port: frontendPort } : {}),
+        };
 
-  // Key order mirrors SPEC § aw.config.example.json.
+  // Key order mirrors SPEC § aw.config.example.json. No top-level `repoRoot` and no `app`: this
+  // is the T23 target shape, and `repoRoot` is derived on read (`backend ?? frontend`).
   const generated: Record<string, unknown> = {
     workspace: requestedName,
-    repoRoot,
+    ...(backendTarget ? { backend: backendTarget } : {}),
+    ...(frontendTarget ? { frontend: frontendTarget } : {}),
     defaults: { provider: provider.data, model },
-    ...(Object.keys(app).length > 0 ? { app } : {}),
+    ...(testUser && passEnv ? { testAccount: { user: testUser, passEnv } } : {}),
+    ...(stagingUrl ? { stagingUrl } : {}),
     viewports: {
       mobile: { width: 375, height: 812 },
       desktop: { width: 1440, height: 900 },
     },
   };
 
+  /** The repo the config (and the registry) point at: backend first, else frontend. */
+  const primaryRepo = (backendRepo ?? frontendRepo)!;
+  /** Every distinct repo this run touches, primary first. */
+  const repos = [...new Set([primaryRepo, ...(frontendRepo ? [frontendRepo] : [])])];
+
   // --- aw.config.json -------------------------------------------------------
-  const configPath = path.join(repoRoot, 'aw.config.json');
+  const configPath = path.join(primaryRepo, 'aw.config.json');
   const existingConfigRaw = readFileOrUndefined(configPath);
   let toWrite: unknown = generated;
   let configAdded: string[] = [];
+  let configMigrated = false;
 
   if (existingConfigRaw !== undefined) {
     let existingConfig: unknown;
@@ -709,8 +802,18 @@ async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
           '  Fix or delete it and run init again. Nothing was written.',
       );
     }
+    // A pre-T23 config is merged in its MIGRATED form, so init writes the target shape from
+    // here on (T23 § 1: init and the panel write the new shape; only reads migrate in memory).
+    const migrated = migrateConfig(existingConfig);
+    configMigrated = JSON.stringify(migrated) !== JSON.stringify(existingConfig);
+    if (configMigrated) {
+      note(
+        'note: aw.config.json uses the pre-T23 shape (repoRoot + app) — it will be rewritten ' +
+          'into the backend/frontend target shape',
+      );
+    }
     note(`aw.config.json already exists: ${configPath}`);
-    for (const line of diffSummary(existingConfig, generated)) note(line);
+    for (const line of diffSummary(migrated, generated)) note(line);
     const overwrite = await prompter.confirm(
       'overwrite it with the values above? (n = keep it and only add missing keys)',
       false,
@@ -719,28 +822,33 @@ async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
       toWrite = generated;
       configAdded = ['(overwritten)'];
     } else {
-      const merged = addMissingKeys(existingConfig, generated);
+      const merged = addMissingKeys(migrated, generated);
       toWrite = merged.value;
       configAdded = merged.added;
     }
   }
 
-  // `repoRoot` is derived from the invocation, not authored by the developer: it is an absolute,
-  // machine-specific path inside a file that gets committed, so any clone, move or second machine
-  // arrives here with a value that points somewhere else. Letting the file win that conflict (as
-  // every other key does) registers the workspace against a repo that was not the one inited —
-  // `review --workspace <ws>` then reviews the wrong tree, or fails with "config not found".
-  let repoRootFixed: string | undefined;
-  if (isPlainObject(toWrite)) {
-    const declared = toWrite.repoRoot;
-    if (typeof declared === 'string' && !samePath(declared, repoRoot)) {
-      repoRootFixed = declared;
-      toWrite = { ...toWrite, repoRoot };
-      note(`note: ${configPath} repoRoot pointed at ${declared} — updated to ${repoRoot}`);
+  // A target's `repoRoot` is derived from the invocation, not authored by the developer: it is
+  // an absolute, machine-specific path inside a file that gets committed, so any clone, move or
+  // second machine arrives here with a value that points somewhere else. Letting the file win
+  // that conflict (as every other key does) registers the workspace against a repo that was not
+  // the one inited — `review --workspace <ws>` then reviews the wrong tree.
+  const repoRootFixes: string[] = [];
+  const fixTargetRoot = (key: 'backend' | 'frontend', actual: string | undefined): void => {
+    if (actual === undefined || !isPlainObject(toWrite)) return;
+    const target = (toWrite as Record<string, unknown>)[key];
+    if (!isPlainObject(target)) return;
+    const declared = target.repoRoot;
+    if (typeof declared === 'string' && !samePath(declared, actual)) {
+      repoRootFixes.push(`${key}.repoRoot: ${declared} → ${actual}`);
+      toWrite = { ...toWrite, [key]: { ...target, repoRoot: actual } };
+      note(`note: ${configPath} ${key}.repoRoot pointed at ${declared} — updated to ${actual}`);
     }
-  }
+  };
+  fixTargetRoot('backend', backendRepo);
+  fixTargetRoot('frontend', frontendRepo);
 
-  const validated = AwConfig.safeParse(toWrite);
+  const validated = parseAwConfig(toWrite);
   if (!validated.success) {
     throw new InitError(
       `the resulting config is invalid: ${configPath}\n${formatIssues(validated.error)}\n` +
@@ -750,14 +858,14 @@ async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
   // The zod-parsed copy is only the validation; the RAW merged object is what gets written, so
   // keys this schema does not know about survive an init of a hand-extended config.
   //
-  // A config that needs nothing added is handed back byte for byte instead of being
-  // re-serialised: `JSON.stringify(…, 2)` would explode a hand-written one-line
-  // `"defaults": { … }` into five lines and show up as a diff in a repo where init changed
-  // nothing. Reformatting is not a merge result.
+  // A config that needs nothing added (and needs no shape migration) is handed back byte for
+  // byte instead of being re-serialised: `JSON.stringify(…, 2)` would explode a hand-written
+  // one-line `"defaults": { … }` into five lines and show up as a diff in a repo where init
+  // changed nothing. Reformatting is not a merge result.
   const configContent =
     existingConfigRaw === undefined
-      ? `${JSON.stringify(validated.data, null, 2)}\n`
-      : configAdded.length === 0 && repoRootFixed === undefined
+      ? `${JSON.stringify(toWrite, null, 2)}\n`
+      : configAdded.length === 0 && repoRootFixes.length === 0 && !configMigrated
         ? existingConfigRaw
         : `${JSON.stringify(toWrite, null, 2)}\n`;
 
@@ -779,39 +887,54 @@ async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
       `note: ${configPath} declares workspace "${workspace}" — registering that name, not "${requestedName}".`,
     );
   }
-  const effectivePassEnv = validated.data.app?.testAccount?.passEnv;
+  const effectivePassEnv = validated.data.testAccount?.passEnv;
 
   // --- workspaces.json ------------------------------------------------------
   const registryPath = path.join(awHome(), 'workspaces.json');
-  // The directory that was actually inited — never the path the config happened to carry.
+  // Both roots come from the VALIDATED config — the file may know about a target this
+  // invocation never mentioned (a re-init of one half must not unregister the other). The
+  // legacy `repoRoot` stays populated (primary first) so older panel builds keep working.
   const registryEntry: WorkspaceEntry = {
     name: workspace,
-    repoRoot,
+    repoRoot: primaryRepo,
+    ...(validated.data.backend ? { backendRepo: validated.data.backend.repoRoot } : {}),
+    ...(validated.data.frontend ? { frontendRepo: validated.data.frontend.repoRoot } : {}),
     createdAt: new Date().toISOString(),
   };
   const registry = upsertWorkspace(readFileOrUndefined(registryPath), registryEntry);
 
-  // --- CLAUDE.md ------------------------------------------------------------
-  const claudeMdPath = path.join(repoRoot, 'CLAUDE.md');
-  const existingClaudeMd = readFileOrUndefined(claudeMdPath);
-  const header = `# ${path.basename(repoRoot)}\n\nProject notes for Claude Code. Anything above the agent-workflows block below is yours;\n\`aw init\` only ever rewrites what is between the two markers.\n\n`;
-  const claudeMd = mergeClaudeMd(
-    existingClaudeMd,
-    renderClaudeBlock({ workspace, awRepoRoot: AW_REPO_ROOT, passEnv: effectivePassEnv }),
-    header,
-  );
+  // --- CLAUDE.md + .gitignore + .claude/, into EVERY repo (T23 § 5) ---------
+  // Whichever repo a developer opens, the slash commands and the block should be there.
+  const writes: PlannedWrite[] = [{ file: configPath, content: configContent }];
+  const copies: PlannedCopy[] = [];
+  const claudeMd: { repo: string; action: ClaudeMdAction }[] = [];
+  const gitignore: { repo: string; added: string[] }[] = [];
 
-  // --- .gitignore -----------------------------------------------------------
-  const gitignorePath = path.join(repoRoot, '.gitignore');
-  const gitignore = mergeGitignore(readFileOrUndefined(gitignorePath));
+  const block = renderClaudeBlock({
+    workspace,
+    awRepoRoot: AW_REPO_ROOT,
+    passEnv: effectivePassEnv,
+    backendRepo: validated.data.backend?.repoRoot,
+    frontendRepo: validated.data.frontend?.repoRoot,
+    configRepo: primaryRepo,
+  });
+  for (const repo of repos) {
+    const claudeMdPath = path.join(repo, 'CLAUDE.md');
+    const header = `# ${path.basename(repo)}\n\nProject notes for Claude Code. Anything above the agent-workflows block below is yours;\n\`aw init\` only ever rewrites what is between the two markers.\n\n`;
+    const mergedMd = mergeClaudeMd(readFileOrUndefined(claudeMdPath), block, header);
+    writes.push({ file: claudeMdPath, content: mergedMd.content });
+    claudeMd.push({ repo, action: mergedMd.action });
 
-  const writes: PlannedWrite[] = [
-    { file: configPath, content: configContent },
-    { file: claudeMdPath, content: claudeMd.content },
-  ];
-  if (gitignore.added.length > 0) writes.push({ file: gitignorePath, content: gitignore.content });
+    const gitignorePath = path.join(repo, '.gitignore');
+    const mergedIgnore = mergeGitignore(readFileOrUndefined(gitignorePath));
+    if (mergedIgnore.added.length > 0) {
+      writes.push({ file: gitignorePath, content: mergedIgnore.content });
+    }
+    gitignore.push({ repo, added: mergedIgnore.added });
 
-  const copies = planClaudeCopies(repoRoot);
+    copies.push(...planClaudeCopies(repo));
+  }
+
   const registryContent = `${JSON.stringify(registry.file, null, 2)}\n`;
 
   // Last planning step: prove every destination that is actually going to change can be written.
@@ -824,7 +947,7 @@ async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
   ]);
 
   return {
-    repoRoot,
+    repos,
     workspace,
     writes,
     copies,
@@ -832,9 +955,10 @@ async function planInit(flags: InitFlags, prompter: Prompter): Promise<Plan> {
     registryEntry,
     registryContent,
     configAdded,
-    repoRootFixed,
-    gitignoreAdded: gitignore.added,
-    claudeMdAction: claudeMd.action,
+    configMigrated,
+    repoRootFixes,
+    gitignore,
+    claudeMd,
     passEnv: effectivePassEnv,
   };
 }
@@ -1002,24 +1126,43 @@ export function renderTree(root: string, changes: readonly Change[]): string[] {
 }
 
 function printSummary(plan: Plan, applied: Applied): void {
-  out('');
-  for (const line of renderTree(plan.repoRoot, applied.changes)) out(line);
+  // One tree per repo: a two-repo workspace gets two, each holding only its own files.
+  for (const repo of plan.repos) {
+    const inRepo = applied.changes.filter((c) => c.file.startsWith(repo + path.sep));
+    if (inRepo.length === 0) continue;
+    out('');
+    for (const line of renderTree(repo, inRepo)) out(line);
+  }
   out('');
   if (plan.configAdded.length > 0) {
     out(`config keys added: ${plan.configAdded.join(', ')}`);
   }
-  if (plan.repoRootFixed !== undefined) {
-    out(`config repoRoot corrected: ${plan.repoRootFixed} → ${plan.repoRoot}`);
+  if (plan.configMigrated) {
+    out('config migrated to the backend/frontend target shape (repoRoot + app → targets)');
   }
-  out(`CLAUDE.md block: ${plan.claudeMdAction}`);
-  out(
-    plan.gitignoreAdded.length > 0
-      ? `.gitignore lines added: ${plan.gitignoreAdded.join(' ')}`
-      : '.gitignore: already complete',
-  );
+  for (const fix of plan.repoRootFixes) out(`config target corrected: ${fix}`);
+  for (const md of plan.claudeMd) {
+    out(`CLAUDE.md block${plan.repos.length > 1 ? ` (${md.repo})` : ''}: ${md.action}`);
+  }
+  for (const ignore of plan.gitignore) {
+    const where = plan.repos.length > 1 ? ` (${ignore.repo})` : '';
+    out(
+      ignore.added.length > 0
+        ? `.gitignore lines added${where}: ${ignore.added.join(' ')}`
+        : `.gitignore${where}: already complete`,
+    );
+  }
+  const entry = plan.registryEntry;
+  const targets =
+    entry.backendRepo !== undefined || entry.frontendRepo !== undefined
+      ? [
+          ...(entry.backendRepo !== undefined ? [`backend ${entry.backendRepo}`] : []),
+          ...(entry.frontendRepo !== undefined ? [`frontend ${entry.frontendRepo}`] : []),
+        ].join(' · ')
+      : entry.repoRoot;
   out(
     `workspace "${plan.workspace}" ${applied.registryReplaced ? 're-registered' : 'registered'} ` +
-      `in ${plan.registryPath} → ${plan.registryEntry.repoRoot}`,
+      `in ${plan.registryPath} → ${targets}`,
   );
   if (plan.passEnv) {
     out(`test-account password: set ${plan.passEnv} in your shell/.env — it is never stored here`);
@@ -1055,14 +1198,16 @@ export function registerInit(program: Command): void {
   program
     .command('init')
     .description('Set up a target repo as an agent-workflows workspace')
-    .option('-r, --repo <path>', 'target repo (must contain .git; default: cwd)')
+    .option('-r, --repo <path>', 'target repo (must contain .git; default: cwd). Alias for --backend-repo')
     .option('-n, --name <ws>', 'workspace name (default: the repo directory name)')
-    .option('--backend-start <cmd>', 'command that starts the backend')
-    .option('--backend-port <port>', `backend port (default: ${DEFAULT_BACKEND_PORT})`)
-    .option('--health-path <path>', `backend health path (default: ${DEFAULT_HEALTH_PATH})`)
-    .option('--frontend-start <cmd>', 'command that starts the frontend')
-    .option('--frontend-port <port>', `frontend port (default: ${DEFAULT_FRONTEND_PORT})`)
-    .option('--base-url <url>', 'base URL under test (default: http://localhost:<backend-port>)')
+    .option('--backend-repo <path>', 'backend repo (its own git repo; same as --repo)')
+    .option('--backend-start <cmd>', 'command that starts the backend, run in the backend repo')
+    .option('--backend-port <port>', `backend port (default with a start command: ${DEFAULT_BACKEND_PORT})`)
+    .option('--health-path <path>', `backend health path (default with a start command: ${DEFAULT_HEALTH_PATH})`)
+    .option('--frontend-repo <path>', 'frontend repo, when the UI lives in its own git repo')
+    .option('--frontend-start <cmd>', 'command that starts the frontend, run in the frontend repo')
+    .option('--frontend-port <port>', `frontend port (default with a start command: ${DEFAULT_FRONTEND_PORT})`)
+    .option('--base-url <url>', 'backend URL under test (default: http://localhost:<backend-port>)')
     .option('--test-user <user>', 'test-account user (the password is NEVER asked for or stored)')
     .option('--pass-env <VAR>', `env var NAME holding its password (default: ${DEFAULT_PASS_ENV})`)
     .option('--staging-url <url>', 'staging URL (default: none)')

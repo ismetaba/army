@@ -43,7 +43,7 @@ agent-workflows/
 └── docs/HANDOFF.md
 ```
 
-## Types (verbatim contents of `shared/schemas.ts`, created in T03, extended in T16)
+## Types (contents of `shared/schemas.ts`, created in T03, extended in T16, re-shaped in T23)
 
 ```ts
 import { z } from 'zod';
@@ -60,23 +60,43 @@ export type Verdict = z.infer<typeof Verdict>;
 export const ModelChoice = z.object({ provider: ProviderId, model: z.string() });
 export const Viewport = z.object({ width: z.number(), height: z.number() });
 
+// T23: a workspace carries up to two TARGET SETS — `backend` and `frontend` — each with its
+// OWN repoRoot, because the two halves of a product legitimately live in two repositories.
+export const Target = z.object({
+  repoRoot: z.string(),                 // absolute path — its own git repo
+  start: z.string().optional(),         // dev-server command, run in repoRoot
+  port: z.number().optional(),
+  url: z.string().optional(),           // defaults to http://localhost:<port>
+  healthPath: z.string().optional(),    // backend only in practice; kept on both
+});
+export const TargetName = z.enum(['backend', 'frontend']);
+export function targetUrl(target?: Target): string | undefined; // url ?? http://localhost:<port>
+
 export const AwConfig = z.object({
   workspace: z.string(),                       // unique workspace name
-  repoRoot: z.string(),                        // absolute path of the TARGET repo
+  backend: Target.optional(),                  // at least one of backend/frontend is required
+  frontend: Target.optional(),
   defaults: ModelChoice,
   agents: z.record(AgentName, ModelChoice.partial()).optional(),
-  app: z.object({
-    backend: z.object({ start: z.string(), port: z.number(), healthPath: z.string().optional() }).optional(),
-    frontend: z.object({ start: z.string(), port: z.number() }).optional(),
-    baseUrl: z.string().optional(),            // default http://localhost:<backend.port>
-    testAccount: z.object({ user: z.string(), passEnv: z.string() }).optional(), // password read from env var, NEVER stored
-    stagingUrl: z.string().optional(),
-  }).optional(),
+  testAccount: z.object({ user: z.string(), passEnv: z.string() }).optional(), // password read from env var, NEVER stored
+  stagingUrl: z.string().optional(),
   viewports: z.object({ mobile: Viewport, desktop: Viewport })
     .default({ mobile: { width: 375, height: 812 }, desktop: { width: 1440, height: 900 } }),
   offLimits: z.array(z.string()).optional(),
-});
+})
+  // `repoRoot` survives as a DERIVED value (`backend ?? frontend`) — ~20 files consume it.
+  .transform((cfg) => ({ ...cfg, repoRoot: cfg.backend?.repoRoot ?? cfg.frontend?.repoRoot }));
 export type AwConfig = z.infer<typeof AwConfig>;
+
+// T23 migration — every reader parses through this, so a pre-T23 config (`repoRoot` + flat
+// `app`) keeps working forever WITHOUT the file being rewritten:
+//   repoRoot + app.backend  → backend: { repoRoot, ...app.backend }
+//   repoRoot + app.frontend → frontend: { repoRoot, ...app.frontend }
+//   app.baseUrl             → backend.url
+//   bare repoRoot (no app targets, no frontend) → backend: { repoRoot }   // review-only
+//   app.testAccount / app.stagingUrl → top level
+export function migrateConfig(raw: unknown): unknown;
+export function parseAwConfig(raw: unknown): ReturnType<typeof AwConfig.safeParse>;
 
 export const Finding = z.object({
   severity: Severity, file: z.string(), line: z.number(),
@@ -120,9 +140,30 @@ export const RunManifest = z.object({
 });
 export type RunManifest = z.infer<typeof RunManifest>;
 
-export const Workspace = z.object({ name: z.string(), repoRoot: z.string(), createdAt: z.string() });
+export const Workspace = z.object({
+  name: z.string(),
+  repoRoot: z.string(),               // kept: = backendRepo ?? frontendRepo (where aw.config.json lives)
+  backendRepo: z.string().optional(), // T23
+  frontendRepo: z.string().optional(),
+  createdAt: z.string(),
+});
 export const WorkspacesFile = z.object({ workspaces: z.array(Workspace) });
 ```
+
+`RunManifest.input` additionally carries `target: TargetName.optional()` and
+`repoRoot: z.string().optional()` (T23) — which target set a run acted on and the repo it
+resolved to. Optional: pre-T23 manifests lack both and readers render "—".
+
+### Which target each workflow uses (T23)
+
+| workflow | primary target (cwd, git, tool containment) | also told about |
+|---|---|---|
+| `design-loop` | **frontend** — the UI is written, screenshotted and checkpointed there | the backend's `url` + `healthPath` in the prompt; the backend repo is READ-ONLY via the tool layer |
+| `test-feature` | **backend** — the target URL it exercises (`--url` still overrides) | the frontend `url`, for browser cases |
+| `review` | `--target backend\|frontend` (default: backend if present, else frontend) | — |
+
+Tool containment: `makeCoreTools(profile, { primary, readAlso })` — write inside `primary`
+only; read inside either root. Each dev server starts with cwd = its own target's `repoRoot`.
 
 ## Model resolution (implemented in `src/config.ts`, T03)
 
@@ -135,27 +176,36 @@ Rule: if the resolved provider differs from `defaults.provider` and no model was
 the same or higher precedence level, fail with:
 `model required: provider "<p>" selected without a model (use --model or agents.<name>.model)`.
 
-## `aw.config.example.json` (T03; `aw init` writes the real one into the target repo)
+## `aw.config.example.json` (T03; `aw init` writes the real one into the PRIMARY repo — backend, else frontend)
 
 ```json
 {
   "workspace": "example",
-  "repoRoot": "/absolute/path/to/target-repo",
+  "backend": {
+    "repoRoot": "/absolute/path/to/api-repo",
+    "start": "npm run dev:api",
+    "port": 3001,
+    "healthPath": "/health"
+  },
+  "frontend": {
+    "repoRoot": "/absolute/path/to/ui-repo",
+    "start": "npm run dev",
+    "port": 3000
+  },
   "defaults": { "provider": "lmstudio", "model": "qwen3-30b-a3b" },
   "agents": {
     "code-reviewer": { "provider": "anthropic", "model": "claude-sonnet-5" },
     "ui-designer": { "provider": "openai", "model": "gpt-5" }
   },
-  "app": {
-    "backend": { "start": "npm run dev:api", "port": 3001, "healthPath": "/health" },
-    "frontend": { "start": "npm run dev", "port": 3000 },
-    "baseUrl": "http://localhost:3001",
-    "testAccount": { "user": "test@example.com", "passEnv": "AW_TEST_PASSWORD" }
-  },
+  "testAccount": { "user": "test@example.com", "passEnv": "AW_TEST_PASSWORD" },
   "viewports": { "mobile": { "width": 375, "height": 812 }, "desktop": { "width": 1440, "height": 900 } },
   "offLimits": ["shared dev database"]
 }
 ```
+
+The two halves may share one `repoRoot` (the single-repo case), and either target may be
+omitted. Pre-T23 configs (`repoRoot` + flat `app`) keep loading via `migrateConfig` — never
+rewritten on read; `aw init` and the panel's settings save write the target shape.
 
 For `lmstudio`, `model` must be the model id shown in LM Studio's UI. Base URL override:
 env `LMSTUDIO_BASE_URL` (default `http://localhost:1234/v1`).
@@ -211,10 +261,10 @@ Parser: first line `/^VERDICT: (APPROVE|APPROVE WITH NITS|REQUEST CHANGES)$/`; f
 
 ```
 npx tsx src/cli.ts ping          [--provider p] [--model m]
-npx tsx src/cli.ts review        [--base main] [--provider p] [--model m] [--config path]
+npx tsx src/cli.ts review        [--base main] [--target backend|frontend] [--provider p] [--model m] [--config path]
 npx tsx src/cli.ts test-feature  "<desc>" [--url u] [--allow-destructive] [--provider p] [--model m]
 npx tsx src/cli.ts design-loop   "<feature|spec-path>" [--iterate "<feedback>"] [--provider p] [--model m]
-npx tsx src/cli.ts init          [--repo path] [--name ws] [...non-interactive flags]
+npx tsx src/cli.ts init          [--repo path] [--backend-repo path] [--frontend-repo path] [--name ws] [...non-interactive flags]
 ```
 
 `--config` defaults to `./aw.config.json` (the target repo's). All workflows accept

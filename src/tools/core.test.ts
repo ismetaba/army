@@ -192,6 +192,74 @@ describe('path containment', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// T23 — two roots: write inside primary only, read inside either
+// ---------------------------------------------------------------------------
+
+describe('two-root containment ({ primary, readAlso })', () => {
+  /** `outsideDir` plays the second repo: readable, never writable. */
+  const tools = () => makeCoreTools('designer', { primary: repoRoot, readAlso: outsideDir });
+
+  it('reads a file in the readAlso root via its absolute path', async () => {
+    const res = await call(tools(), 'read_file', { path: path.join(outsideDir, 'secret.txt') });
+    expect(res.error).toBeUndefined();
+    expect(res.content).toContain('TOP SECRET');
+  });
+
+  it('greps inside the readAlso root via its absolute path', async () => {
+    const res = await call(tools(), 'grep', { pattern: 'TOP', path: outsideDir });
+    expect(res.error).toBeUndefined();
+    expect(res.matches).toContain('secret.txt');
+  });
+
+  it('refuses a WRITE into the readAlso root, naming the writable root', async () => {
+    const res = await call(tools(), 'write_file', {
+      path: path.join(outsideDir, 'pwned3.txt'),
+      content: 'x',
+    });
+    expect(res.error).toContain('read-only root');
+    expect(res.error).toContain(repoRoot);
+    expect(fs.existsSync(path.join(outsideDir, 'pwned3.txt'))).toBe(false);
+  });
+
+  it('refuses an EDIT inside the readAlso root the same way', async () => {
+    const res = await call(tools(), 'edit_file', {
+      path: path.join(outsideDir, 'secret.txt'),
+      old: 'TOP SECRET',
+      new: 'REWRITTEN',
+    });
+    expect(res.error).toContain('read-only root');
+    expect(fs.readFileSync(path.join(outsideDir, 'secret.txt'), 'utf8')).toBe('TOP SECRET\n');
+  });
+
+  it('still refuses reads outside BOTH roots, naming both', async () => {
+    const elsewhere = path.join(path.dirname(repoRoot), 'nowhere', 'x.txt');
+    const res = await call(tools(), 'read_file', { path: elsewhere });
+    expect(res.error).toContain(repoRoot);
+    expect(res.error).toContain(outsideDir);
+  });
+
+  it('a symlink out of the primary repo now resolves as a readAlso READ, and stays unwritable', async () => {
+    // <repo>/link-out -> outsideDir: reading through it is exactly the two-root permission.
+    const read = await call(tools(), 'read_file', { path: 'link-out/secret.txt' });
+    expect(read.error).toBeUndefined();
+    const write = await call(tools(), 'write_file', { path: 'link-out/pwned4.txt', content: 'x' });
+    expect(write.error).toBeDefined();
+    expect(fs.existsSync(path.join(outsideDir, 'pwned4.txt'))).toBe(false);
+  });
+
+  it('a readAlso equal to the primary is ignored (single-root behaviour)', async () => {
+    const same = makeCoreTools('designer', { primary: repoRoot, readAlso: repoRoot });
+    const res = await call(same, 'read_file', { path: path.join(outsideDir, 'secret.txt') });
+    expect(res.error).toContain('repoRoot');
+  });
+
+  it('bash still runs in the primary root', async () => {
+    const res = await call(tools(), 'bash', { command: 'pwd' });
+    expect(res.stdout.trim()).toBe(repoRoot);
+  });
+});
+
 describe('write_file / edit_file permissions', () => {
   it('tester write_file outside test-reports/tmp is refused', async () => {
     const res = await call(makeCoreTools('tester', repoRoot), 'write_file', {

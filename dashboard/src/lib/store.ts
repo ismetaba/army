@@ -196,6 +196,9 @@ export interface WorkspaceSummary {
   name: string;
   /** `null` for a directory with runs that is not in `workspaces.json` (registry lost/edited). */
   repoRoot: string | null;
+  /** T23: the two target roots, when the registry entry carries them. */
+  backendRepo: string | null;
+  frontendRepo: string | null;
   createdAt: string | null;
   runCount: number;
   /**
@@ -237,6 +240,8 @@ export const listWorkspaceSummaries = cache(function listWorkspaceSummaries(): W
       return {
         name,
         repoRoot: entry?.repoRoot ?? null,
+        backendRepo: entry?.backendRepo ?? null,
+        frontendRepo: entry?.frontendRepo ?? null,
         createdAt: entry?.createdAt ?? null,
         runCount: runs.length,
         archivedCount: usable ? listArchivedRuns(name).length : 0,
@@ -841,6 +846,38 @@ export function addWorkspace(entry: Workspace): RegistryResult {
   const next = { workspaces: [...registry.workspaces, entry] };
   try {
     writeAtomic(path.join(awHome(), "workspaces.json"), `${JSON.stringify(next, null, 2)}\n`);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "failed", message: "workspaces.json could not be written" };
+  }
+}
+
+/**
+ * T23: keep the registry's `backendRepo`/`frontendRepo` in step with the config that was just
+ * saved. Only those two fields — `repoRoot` stays where the config file lives (it is what
+ * `--workspace` resolves through), and everything else in the entry is untouched. Best-effort:
+ * the config write already succeeded, and a stale mirror must not turn it into an error.
+ */
+export function updateWorkspaceTargets(
+  name: string,
+  targets: { backendRepo?: string; frontendRepo?: string },
+): RegistryResult {
+  const registry = readRegistryForWrite();
+  if (!registry.ok) return { ok: false, reason: "corrupt", message: registry.message };
+  const index = registry.workspaces.findIndex((w) => w.name === name);
+  if (index === -1) {
+    return { ok: false, reason: "missing", message: `workspace "${name}" is not registered` };
+  }
+  const current = registry.workspaces[index];
+  const next: Workspace = { ...current };
+  if (targets.backendRepo !== undefined) next.backendRepo = targets.backendRepo;
+  else delete next.backendRepo;
+  if (targets.frontendRepo !== undefined) next.frontendRepo = targets.frontendRepo;
+  else delete next.frontendRepo;
+  if (JSON.stringify(next) === JSON.stringify(current)) return { ok: true };
+  const file = { workspaces: registry.workspaces.map((w, i) => (i === index ? next : w)) };
+  try {
+    writeAtomic(path.join(awHome(), "workspaces.json"), `${JSON.stringify(file, null, 2)}\n`);
     return { ok: true };
   } catch {
     return { ok: false, reason: "failed", message: "workspaces.json could not be written" };

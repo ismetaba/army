@@ -443,7 +443,7 @@ describe('aw init over a hand-written config', () => {
     output = runInit(['--yes', '--repo', repo, '--name', 'ignored', '--model', 'other'], awHome);
   }, 120_000);
 
-  it('keeps every existing value, adds only the missing keys', () => {
+  it('keeps every existing value, adds only the missing keys, migrates the shape', () => {
     const written = JSON.parse(fs.readFileSync(path.join(repo, 'aw.config.json'), 'utf8'));
     expect(written.workspace).toBe('fixture');
     expect(written.defaults).toEqual({ provider: 'lmstudio', model: 'qwen3-coder-30b-a3b-instruct' });
@@ -452,8 +452,13 @@ describe('aw init over a hand-written config', () => {
       mobile: { width: 375, height: 812 },
       desktop: { width: 1440, height: 900 },
     });
+    // T23: init writes the target shape — the legacy repoRoot became the backend target.
+    expect(written.backend).toEqual({ repoRoot: repo });
+    expect(written.repoRoot).toBeUndefined();
+    expect(written.app).toBeUndefined();
     expect(AwConfig.safeParse(written).success).toBe(true);
     expect(output).toContain('config keys added: viewports');
+    expect(output).toContain('config migrated to the backend/frontend target shape');
   });
 
   it('registers the name the config declares, not the one on the command line', () => {
@@ -467,10 +472,12 @@ describe('aw init over a hand-written config', () => {
   it(
     'leaves a complete hand-written config byte for byte alone (no reformatting)',
     () => {
-      // The real fixture's config: compact, one line per section. `JSON.stringify(…, 2)` would
-      // explode it into 30 lines and show up as a diff in a repo where init changed nothing.
+      // A compact, hand-formatted config in the CURRENT (target) shape. `JSON.stringify(…, 2)`
+      // would explode it into 30 lines and show up as a diff in a repo where init changed
+      // nothing. (A LEGACY-shape config is deliberately not byte-stable: init migrates it once,
+      // with a note — see the test above.)
       const compact =
-        `{\n  "workspace": "fixture",\n  "repoRoot": ${JSON.stringify(repo)},\n` +
+        `{\n  "workspace": "fixture",\n  "backend": { "repoRoot": ${JSON.stringify(repo)} },\n` +
         '  "defaults": { "provider": "lmstudio", "model": "qwen3-coder-30b-a3b-instruct" },\n' +
         '  "viewports": { "mobile": { "width": 375, "height": 812 }, "desktop": { "width": 1440, "height": 900 } }\n}\n';
       const configPath = path.join(repo, 'aw.config.json');
@@ -518,15 +525,122 @@ describe('aw init over a config whose repoRoot points at another repo', () => {
 
   it('corrects the key in the config and says so', () => {
     const written = JSON.parse(fs.readFileSync(path.join(repo, 'aw.config.json'), 'utf8'));
-    expect(written.repoRoot).toBe(repo);
+    // T23: the legacy repoRoot became the backend target, and ITS root is what gets corrected.
+    expect(written.backend.repoRoot).toBe(repo);
+    expect(written.repoRoot).toBeUndefined();
     expect(written.defaults.model).toBe('m'); // every other value still wins
-    expect(output).toContain('repoRoot pointed at');
+    expect(output).toContain('backend.repoRoot pointed at');
     expect(output).toContain(`updated to ${repo}`);
   });
 
   it('does not warn about a defaulted model when the config already names one', () => {
     expect(output).not.toContain('no --model given');
   });
+});
+
+// ---------------------------------------------------------------------------
+// T23 — one workspace, two repositories
+// ---------------------------------------------------------------------------
+
+describe('aw init with a backend repo and a separate frontend repo (T23)', () => {
+  const root = scratch('aw-init-two-');
+  const backend = path.join(root, 'api');
+  const frontend = path.join(root, 'ui');
+  const awHome = path.join(root, 'home');
+  const ARGS = [
+    '--yes',
+    '--repo', backend,
+    '--frontend-repo', frontend,
+    '--name', 'product',
+    '--model', 'm',
+    '--backend-port', '8080',
+    '--health-path', '/actuator/health',
+    '--frontend-start', 'npm start',
+    '--frontend-port', '4200',
+  ];
+
+  beforeAll(() => {
+    for (const dir of [backend, frontend]) {
+      fs.mkdirSync(dir, { recursive: true });
+      execFileSync('git', ['init', '-q'], { cwd: dir });
+    }
+    runInit(ARGS, awHome);
+  }, 120_000);
+
+  it('writes ONE config, into the backend repo, describing both targets', () => {
+    const written = JSON.parse(fs.readFileSync(path.join(backend, 'aw.config.json'), 'utf8'));
+    expect(written.backend).toEqual({
+      repoRoot: backend,
+      port: 8080,
+      healthPath: '/actuator/health',
+    });
+    expect(written.frontend).toEqual({ repoRoot: frontend, start: 'npm start', port: 4200 });
+    expect(written.repoRoot).toBeUndefined();
+    expect(written.app).toBeUndefined();
+    expect(fs.existsSync(path.join(frontend, 'aw.config.json'))).toBe(false);
+  });
+
+  it('registers both roots; repoRoot stays populated as the primary for older consumers', () => {
+    const registry = WorkspacesFile.parse(
+      JSON.parse(fs.readFileSync(path.join(awHome, 'workspaces.json'), 'utf8')),
+    );
+    expect(registry.workspaces).toHaveLength(1);
+    expect(registry.workspaces[0]).toMatchObject({
+      name: 'product',
+      repoRoot: backend,
+      backendRepo: backend,
+      frontendRepo: frontend,
+    });
+  });
+
+  it('installs CLAUDE.md, the .gitignore lines and the .claude layer into BOTH repos', () => {
+    for (const dir of [backend, frontend]) {
+      expect(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8')).toContain(
+        '## Agent workflows (aw)',
+      );
+      const ignore = fs.readFileSync(path.join(dir, '.gitignore'), 'utf8');
+      for (const line of GITIGNORE_LINES) expect(ignore).toContain(line);
+      expect(fs.readdirSync(path.join(dir, '.claude', 'commands')).sort()).toEqual([
+        'design-loop.md',
+        'review.md',
+        'test-feature.md',
+      ]);
+    }
+  });
+
+  it('the CLAUDE.md block names both repos and where the config lives', () => {
+    const md = fs.readFileSync(path.join(frontend, 'CLAUDE.md'), 'utf8');
+    expect(md).toContain(`- backend: \`${backend}\``);
+    expect(md).toContain(`- frontend: \`${frontend}\``);
+    expect(md).toContain(`\`aw.config.json\` in \`${backend}\``);
+  });
+
+  it('a second run changes no byte in either repo', () => {
+    const snapshot = (dir: string): Record<string, string> => {
+      const files: Record<string, string> = {};
+      const walk = (at: string): void => {
+        for (const entry of fs.readdirSync(at, { withFileTypes: true })) {
+          if (entry.name === '.git') continue;
+          const full = path.join(at, entry.name);
+          if (entry.isDirectory()) walk(full);
+          else files[path.relative(dir, full)] = fs.readFileSync(full, 'utf8');
+        }
+      };
+      walk(dir);
+      return files;
+    };
+    const before = [snapshot(backend), snapshot(frontend)];
+    runInit(ARGS, awHome);
+    expect([snapshot(backend), snapshot(frontend)]).toEqual(before);
+  }, 120_000);
+
+  it('names the repo that is not a git repository', () => {
+    const bad = path.join(root, 'not-a-repo');
+    fs.mkdirSync(bad, { recursive: true });
+    expect(() => runInit(['--yes', '--repo', backend, '--frontend-repo', bad], awHome)).toThrow(
+      /frontend repo is not a git repository/,
+    );
+  }, 120_000);
 });
 
 // ---------------------------------------------------------------------------

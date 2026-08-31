@@ -176,6 +176,19 @@ export function providerDetail(err: unknown): string {
 }
 
 /**
+ * True when a `claude-cli` session ended because it used up its turn budget.
+ *
+ * The API providers stop GRACEFULLY at the step ceiling (`stopWhen: stepCountIs(N)` resolves
+ * with whatever was produced); the claude-cli bridge instead REJECTS with this error once
+ * `maxTurns` is spent. For a workflow whose evidence lives on disk (design-loop: the edits and
+ * the screenshots are already written), that difference must not turn "ran long" into a dead
+ * run — the caller treats it like the exhausted-budget warning it is.
+ */
+export function isTurnLimitError(err: unknown): boolean {
+  return /max(?:imum)? number of turns/i.test(messageOf(err));
+}
+
+/**
  * True when the provider rejected the request because the prompt does not fit its context.
  *
  * Local servers say this in the response body, not in the HTTP reason phrase — LM Studio with an

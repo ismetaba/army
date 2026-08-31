@@ -2,6 +2,7 @@ import { execFile as execFileCb } from 'node:child_process';
 import fs from 'node:fs';
 import { promisify } from 'node:util';
 import { generateText, stepCountIs } from 'ai';
+import { TargetName } from '../../shared/schemas';
 import type { Finding, ProviderId, Severity, Verdict } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
@@ -25,6 +26,8 @@ const execFileAsync = promisify(execFileCb);
 
 export interface ReviewOptions {
   base: string;
+  /** T23: which target set's repo the diff belongs to. Default: backend if present, else frontend. */
+  target?: string;
   provider?: string;
   model?: string;
   config?: string;
@@ -550,12 +553,27 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
   // reason the provider is unusable here. Refused before any diff, model call or cost.
   const { provider, model } = resolveModel('code-reviewer', opts, cfg);
 
-  const repoRoot = cfg.repoRoot;
-  if (!fs.existsSync(repoRoot)) fail(`repoRoot does not exist: ${repoRoot}`);
+  // --- the target (T23): a diff belongs to ONE repo -----------------------------------------
+  const targetFlag = opts.target?.trim();
+  if (targetFlag !== undefined && targetFlag !== '' && !TargetName.safeParse(targetFlag).success) {
+    fail(`unknown --target "${targetFlag}" (expected ${TargetName.options.join(' or ')})`);
+  }
+  const targetName: TargetName =
+    targetFlag ? (targetFlag as TargetName) : cfg.backend ? 'backend' : 'frontend';
+  const target = cfg[targetName];
+  if (!target) {
+    const other: TargetName = targetName === 'backend' ? 'frontend' : 'backend';
+    fail(
+      `this workspace has no ${targetName} target — add one in settings (repo folder + start ` +
+        `command + port), or review the ${other} with --target ${other}`,
+    );
+  }
+  const repoRoot = target.repoRoot;
+  if (!fs.existsSync(repoRoot)) fail(`${targetName} repoRoot does not exist: ${repoRoot}`);
   try {
     await git(repoRoot, ['rev-parse', '--git-dir']);
   } catch (err) {
-    fail(`not a git repository: ${repoRoot} (${gitStderr(err)})`);
+    fail(`${targetName} repo is not a git repository: ${repoRoot} (${gitStderr(err)})`);
   }
 
   // T16: from here on the run is recorded. Everything above is configuration — a run that
@@ -568,14 +586,20 @@ export async function runReview(opts: ReviewOptions): Promise<ReviewResult> {
     provider,
     model,
     input: {
+      // The RESOLVED target is recorded, not just the flag: `input.args` is the line that
+      // reproduces this run, and reproducing it must not depend on which targets the config
+      // happens to have by then.
       args: formatArgs('review', [], {
         base: requested,
+        target: targetName,
         provider: opts.provider,
         model: opts.model,
         config: opts.config,
         workspace: opts.workspace,
       }),
       base: requested,
+      target: targetName,
+      repoRoot,
     },
   });
   setLogSink(run.log);

@@ -26,6 +26,14 @@ Two run paths, one set of agent prompts (`agents/*.md`):
 
 Provider/model per agent is set in the target repo's `aw.config.json` and can be overridden per run with flags.
 
+A workspace carries up to **two target sets** — `backend` and `frontend`, each with its own
+`repoRoot`, start command and port — so a product whose API and UI live in two repositories is
+ONE workspace: `design-loop` acts in the frontend repo (and may read the backend for the API
+contract), `test-feature` targets the backend, and `review` takes `--target backend|frontend`.
+Set both with `aw init --repo <api-repo> --frontend-repo <ui-repo> …` or in the panel's
+settings. Pre-T23 configs (`repoRoot` + flat `app`) keep working — they are migrated in memory
+on read, never rewritten on disk.
+
 ## Headless review
 
 Both run paths review a branch unattended, with no TTY and no questions. On this machine the

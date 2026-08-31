@@ -54,18 +54,23 @@ export const ConfigPatch = z.strictObject({
    * the normal case.
    */
   agents: z.partialRecord(AgentName, ModelChoicePatch.nullable()).nullable().optional(),
-  app: z
-    .strictObject({
-      backend: z.strictObject({ start: Value, port: Value, healthPath: Value }).nullable().optional(),
-      frontend: z.strictObject({ start: Value, port: Value }).nullable().optional(),
-      baseUrl: Value,
-      // `passEnv` is the NAME of an environment variable. There is no field for a password and
-      // no way to add one: the object is strict (SPEC § Dashboard security invariants #5).
-      testAccount: z.strictObject({ user: Value, passEnv: Value }).nullable().optional(),
-      stagingUrl: Value,
-    })
+  /**
+   * T23: the two target sets, each its own repo + start command + port + url. `repoRoot` IS
+   * editable here — the settings form is where a two-repo workspace gets its second half — and
+   * `configRuleIssues` + the route hold it to an absolute path naming a real git repo.
+   */
+  backend: z
+    .strictObject({ repoRoot: Value, start: Value, port: Value, url: Value, healthPath: Value })
     .nullable()
     .optional(),
+  frontend: z
+    .strictObject({ repoRoot: Value, start: Value, port: Value, url: Value })
+    .nullable()
+    .optional(),
+  // `passEnv` is the NAME of an environment variable. There is no field for a password and
+  // no way to add one: the object is strict (SPEC § Dashboard security invariants #5).
+  testAccount: z.strictObject({ user: Value, passEnv: Value }).nullable().optional(),
+  stagingUrl: Value,
   viewports: z.strictObject({ mobile: ViewportPatch, desktop: ViewportPatch }).optional(),
   offLimits: z.union([z.array(z.unknown()), z.null()]).optional(),
 });
@@ -323,12 +328,18 @@ export function configRuleIssues(config: unknown): FieldIssue[] {
     }
   }
 
-  for (const [path, label] of [
-    ["app.backend.port", "the backend port"],
-    ["app.frontend.port", "the frontend port"],
-  ] as const) {
-    const problem = portIssue(at(config, path.split(".")), label, 65535);
-    if (problem !== null) push(path, problem);
+  // T23: each declared target needs a usable repo folder — everything else in it is optional.
+  for (const key of ["backend", "frontend"] as const) {
+    const target = at(config, [key]);
+    if (!isPlainObject(target)) continue;
+    const repoRoot = target.repoRoot;
+    if (isBlank(repoRoot)) {
+      push(`${key}.repoRoot`, `the ${key} target needs its repo folder (an absolute path)`);
+    } else if (typeof repoRoot !== "string" || !repoRoot.startsWith("/")) {
+      push(`${key}.repoRoot`, `the ${key} repo folder must be an absolute path`);
+    }
+    const problem = portIssue(target.port, `the ${key} port`, 65535);
+    if (problem !== null) push(`${key}.port`, problem);
   }
 
   for (const side of ["mobile", "desktop"] as const) {
@@ -338,15 +349,15 @@ export function configRuleIssues(config: unknown): FieldIssue[] {
     }
   }
 
-  const account = at(config, ["app", "testAccount"]);
+  const account = at(config, ["testAccount"]);
   if (isPlainObject(account)) {
-    if (isBlank(account.user)) push("app.testAccount.user", "a user is required for a test account");
+    if (isBlank(account.user)) push("testAccount.user", "a user is required for a test account");
     const passEnv = account.passEnv;
     if (isBlank(passEnv)) {
-      push("app.testAccount.passEnv", "name the environment variable holding the password");
+      push("testAccount.passEnv", "name the environment variable holding the password");
     } else if (typeof passEnv !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(passEnv)) {
       push(
-        "app.testAccount.passEnv",
+        "testAccount.passEnv",
         "give the NAME of the environment variable holding the password (e.g. AW_TEST_PASSWORD), never the password itself",
       );
     }

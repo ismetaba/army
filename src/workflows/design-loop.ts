@@ -4,6 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { generateText, stepCountIs } from 'ai';
 import type { ToolSet } from 'ai';
+import { targetUrl } from '../../shared/schemas';
 import type { AwConfig, ProviderId, ScreenShot } from '../../shared/schemas';
 import { loadAgent } from '../agents';
 import { loadConfig, resolveModel } from '../config';
@@ -23,6 +24,7 @@ import {
   describeModelFailure,
   fail,
   formatArgs,
+  isTurnLimitError,
   log,
   messageOf,
   oneLine,
@@ -66,8 +68,20 @@ export interface DesignLoopResult {
   judgmentCalls: string[];
 }
 
-/** T10 step 5: the designer implements *and* verifies, so it gets the largest budget. */
-const MAX_STEPS = 60;
+/**
+ * T10 step 5: the designer implements *and* verifies, so it gets the largest budget.
+ * Overridable with `AW_DESIGN_MAX_STEPS`: against `claude-cli` a turn is ONE assistant message
+ * (every tool call round-trip counts), and a real feature in a large codebase can need more
+ * than the default — observed on the first two-repo custody run, which spent all 60.
+ * NOTE: the claude-cli provider itself refuses `maxTurns > 100` ("Invalid settings: maxTurns:
+ * Too big"), so 100 is the effective ceiling on that provider.
+ */
+const DEFAULT_MAX_STEPS = 60;
+
+function maxSteps(): number {
+  const raw = Number.parseInt(process.env.AW_DESIGN_MAX_STEPS?.trim() ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_STEPS;
+}
 
 /**
  * The nudge only re-opens the browser: goto + screenshot + console errors for a handful of
@@ -510,10 +524,23 @@ export function buildSessionPrompt(args: {
   parts.push(specPath ? `Feature spec (${specPath}):` : 'Feature to implement:', description, '');
   parts.push(
     `Frontend base URL (already running, do not start it): ${frontendUrl}`,
-    `Repository root (all paths are relative to it): ${repoRoot}`,
+    `Frontend repository root (all relative paths resolve against it; every file you write goes here): ${repoRoot}`,
     `Screenshots you take are saved under: ${screenshotDir}`,
   );
-  if (cfg.app?.baseUrl) parts.push(`Backend base URL: ${cfg.app.baseUrl}`);
+  // T23: the backend is the data contract the page calls. Its URL (and, when the repos differ,
+  // its read-only source tree) go into the prompt so the developer never has to.
+  const backendApi = targetUrl(cfg.backend);
+  if (backendApi) {
+    parts.push(`Backend API base URL (what this UI fetches from): ${backendApi}`);
+    if (cfg.backend?.healthPath) {
+      parts.push(`Backend health endpoint: ${joinUrl(backendApi, cfg.backend.healthPath)}`);
+    }
+  }
+  if (cfg.backend && cfg.backend.repoRoot !== repoRoot) {
+    parts.push(
+      `Backend repository (READ-ONLY — read it to learn the API contract; writes there are refused): ${cfg.backend.repoRoot}`,
+    );
+  }
   if (cfg.offLimits?.length) parts.push(`Off limits (never touch): ${cfg.offLimits.join(', ')}`);
   parts.push(
     '',
@@ -649,26 +676,32 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
   // reason the provider is unusable here.
   const { provider, model } = resolveModel('ui-designer', opts, cfg);
 
-  const repoRoot = cfg.repoRoot;
-  if (!fs.existsSync(repoRoot)) fail(`repoRoot does not exist: ${repoRoot}`);
+  // --- the target (T23): design-loop's primary is the FRONTEND -------------------------------
+  // The UI is written, screenshotted and checkpointed in the frontend repo; the backend (when
+  // configured) is only read and probed. One repoRoot cannot serve both when they differ.
+  const frontend = cfg.frontend;
+  if (!frontend) {
+    fail(
+      'this workspace has no frontend target — add one in settings (repo folder + start ' +
+        'command + port), or run design-loop in a workspace that has one',
+    );
+  }
+  const repoRoot = frontend.repoRoot;
+  if (!fs.existsSync(repoRoot)) fail(`frontend repoRoot does not exist: ${repoRoot}`);
   try {
     await git(repoRoot, ['rev-parse', '--git-dir']);
   } catch (err) {
-    fail(`not a git repository: ${repoRoot} (${gitStderr(err)})`);
+    fail(`frontend repo is not a git repository: ${repoRoot} (${gitStderr(err)})`);
   }
 
   const { description, specPath } = resolveFeature(featureArg);
   const slug = slugForFeature(description);
   const screenshotDir = path.join(repoRoot, 'screenshots', slug);
 
-  // --- where the UI lives ----------------------------------------------------
-  const frontend = cfg.app?.frontend;
-  const frontendUrl = frontend
-    ? `http://localhost:${frontend.port}`
-    : (cfg.app?.baseUrl?.trim() ?? '');
+  const frontendUrl = targetUrl(frontend) ?? '';
   if (!frontendUrl) {
     fail(
-      'no frontend URL: configure app.frontend.port (or app.baseUrl) in aw.config.json — ' +
+      'the frontend target has no URL: set frontend.port (or frontend.url) in settings — ' +
         'design-loop must be able to open the UI in a browser',
     );
   }
@@ -696,6 +729,8 @@ export async function runDesignLoop(opts: DesignLoopOptions): Promise<DesignLoop
       }),
       feature: featureArg,
       targetUrl: frontendUrl,
+      target: 'frontend',
+      repoRoot,
     },
   });
   // Recorded before the session, not after it: a run that dies still has to hand the feedback
@@ -851,11 +886,15 @@ async function designSession(ctx: {
     return fail(message);
   };
 
-  const start = async (label: string, url: string, command?: string): Promise<void> => {
+  /**
+   * T23: each dev server starts in ITS OWN target's repoRoot — `mvnw spring-boot:run` cannot
+   * share a cwd with `ng serve` when the two halves live in two repositories.
+   */
+  const start = async (label: string, url: string, cwd: string, command?: string): Promise<void> => {
     const handle = await ensureUp({
       url,
       start: command,
-      cwd: repoRoot,
+      cwd,
       probeTimeoutMs: PROBE_TIMEOUT_MS,
       waitMs: START_WAIT_MS,
       intervalMs: START_POLL_MS,
@@ -873,28 +912,40 @@ async function designSession(ctx: {
     await bail(
       `${label} at ${url} is still down after ${START_WAIT_MS / 1000}s.\n` +
         `  tried to start it with: ${handle.command ?? command}\n` +
-        `  in: ${repoRoot}\n` +
+        `  in: ${cwd}\n` +
         `  last error: ${handle.lastError ?? 'unknown'}`,
     );
   };
 
-  const backend = cfg.app?.backend;
-  const frontend = cfg.app?.frontend;
-  if (backend) {
-    const backendBase = cfg.app?.baseUrl?.trim() || `http://localhost:${backend.port}`;
-    await start('backend', joinUrl(backendBase, backend.healthPath ?? '/'), backend.start);
+  // runDesignLoop already refused a workspace without a frontend target; the assertion only
+  // keeps the type honest inside this helper.
+  const frontend = cfg.frontend!;
+  // The backend too, if configured — the page this run builds has to have something to fetch
+  // from; that is also why the backend URL goes into the prompt below.
+  const backend = cfg.backend;
+  const backendUrl = targetUrl(backend);
+  if (backend && backendUrl) {
+    await start(
+      'backend',
+      joinUrl(backendUrl, backend.healthPath ?? '/'),
+      backend.repoRoot,
+      backend.start,
+    );
+  } else if (backend) {
+    log('note: the backend target has no port or url — it cannot be probed or started');
   }
-  if (frontend) {
-    await start('frontend', joinUrl(frontendUrl, '/'), frontend.start);
-  } else {
-    log(`note: no app.frontend configured — using ${frontendUrl} as the UI base URL`);
-  }
+  await start('frontend', joinUrl(frontendUrl, '/'), repoRoot, frontend.start);
 
   // --- the session -----------------------------------------------------------
   const agent = loadAgent('ui-designer');
   const browserTools = makeBrowserTools({ screenshotDir, viewports: cfg.viewports, video });
+  /**
+   * T23 § tool containment: the designer WRITES only in the frontend repo, but may READ the
+   * backend repo — the API contract the page calls lives there.
+   */
+  const roots = { primary: repoRoot, readAlso: backend?.repoRoot };
   const tools: ToolSet = {
-    ...makeCoreTools('designer', repoRoot),
+    ...makeCoreTools('designer', roots),
     ...browserTools,
   };
   /**
@@ -903,7 +954,7 @@ async function designSession(ctx: {
    * edit anything now" is enforced by the tool list rather than by a sentence in the prompt.
    */
   const nudgeTools: ToolSet = {
-    ...makeCoreTools('reviewer', repoRoot),
+    ...makeCoreTools('reviewer', roots),
     ...browserTools,
   };
 
@@ -911,14 +962,14 @@ async function designSession(ctx: {
     prompt: string,
     withTools: ToolSet | undefined,
     limitMs: number,
-    maxSteps: number = MAX_STEPS,
+    stepBudget: number = maxSteps(),
   ): Promise<{ text: string; steps: number }> => {
     let result: Awaited<ReturnType<typeof generateText>>;
     try {
       const session = sessionModel(provider, model, {
         tools: withTools ?? {},
         cwd: repoRoot,
-        maxSteps,
+        maxSteps: stepBudget,
       });
       result = await generateText({
         model: session.model,
@@ -930,7 +981,7 @@ async function designSession(ctx: {
           ? {}
           : {
               tools: withTools,
-              stopWhen: withTools ? [stepCountIs(maxSteps), isLooping] : stepCountIs(1),
+              stopWhen: withTools ? [stepCountIs(stepBudget), isLooping] : stepCountIs(1),
             }),
         maxRetries: 1,
         abortSignal: AbortSignal.timeout(limitMs),
@@ -944,6 +995,14 @@ async function designSession(ctx: {
         },
       });
     } catch (err) {
+      // A spent claude-cli turn budget REJECTS where the API providers stop gracefully — but
+      // the session's work is already on disk (edits, screenshots), so it is the same
+      // "used the whole budget" outcome, not a dead run: carry on to the screenshot check,
+      // the nudge and the checkpoint with what exists.
+      if (isTurnLimitError(err)) {
+        log(`warning: the agent used its whole ${stepBudget}-step budget without finishing (${messageOf(err)})`);
+        return { text: '', steps: stepBudget };
+      }
       // sessionModel()/getModel() throws for a missing API key; the SDK throws for transport failures.
       // bail() stops Chromium and every dev server this run started before exiting.
       return bail(
@@ -1009,11 +1068,12 @@ async function designSession(ctx: {
   if (video) clearRecordings(video.dir);
 
   const startedAtMs = Date.now();
-  log(`session: implementing and verifying at ${frontendUrl} (up to ${MAX_STEPS} steps)`);
+  const budget = maxSteps();
+  log(`session: implementing and verifying at ${frontendUrl} (up to ${budget} steps)`);
   let session = await ask(sessionPrompt, tools, timeoutMs());
   log(`model finished in ${session.steps} step(s)`);
-  if (session.steps >= MAX_STEPS) {
-    log(`warning: the agent used its whole ${MAX_STEPS}-step budget without finishing`);
+  if (session.steps >= budget) {
+    log(`warning: the agent used its whole ${budget}-step budget without finishing`);
   }
 
   // --- screenshots (T10 step 6) ----------------------------------------------

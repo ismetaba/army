@@ -113,15 +113,23 @@ export default async function RunPage({ params, searchParams }: PageProps<"/ws/[
 // header data
 // ---------------------------------------------------------------------------
 
-/** `TYPE · AGENT · PROVIDER · BASE · CREATED · DURATION` (handoff § 04). */
+/** `TYPE · AGENT · PROVIDER · TARGET · BASE · CREATED · DURATION` (handoff § 04 + T23). */
 function metaFor(run: RunManifest, running: boolean): MetaItem[] {
   const meta: MetaItem[] = [
     { label: "type", value: run.kind },
     { label: "agent", value: run.agent },
     { label: "provider", value: `${run.provider} / ${run.model}` },
+    // T23: which repo the run acted on. Manifests written before T23 carry neither field —
+    // render "—" rather than guessing. The resolved repo path rides along as the tooltip.
+    {
+      label: "target",
+      value: (
+        <span title={run.input.repoRoot ?? undefined}>{run.input.target ?? "—"}</span>
+      ),
+    },
   ];
   if (run.input.base) meta.push({ label: "base", value: run.input.base });
-  if (run.input.targetUrl) meta.push({ label: "target", value: run.input.targetUrl });
+  if (run.input.targetUrl) meta.push({ label: "url", value: run.input.targetUrl });
   meta.push({ label: "created", value: shortWhen(run.createdAt) });
   meta.push({
     label: running ? "elapsed" : "duration",

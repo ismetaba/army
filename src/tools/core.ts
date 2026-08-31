@@ -365,24 +365,125 @@ const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'
 const REPORTED_HEADERS = ['content-type', 'content-length', 'location'];
 
 /**
+ * The repositories one agent session may touch (T23).
+ *
+ * `primary` is the repo the workflow acts IN: relative paths resolve against it, `bash` runs in
+ * it, `git_diff`/`git_log` describe it, and it is the ONLY root writes may land in. `readAlso`
+ * is the other half of a two-repo product (design-loop reads the backend to learn the API
+ * contract): its files are readable — via their absolute paths — and never writable.
+ */
+export interface ToolRoots {
+  primary: string;
+  readAlso?: string;
+}
+
+/**
  * Build the core (non-browser) tool set for one agent profile.
  *
  * @param profile         SPEC permission profile; decides which keys exist at all.
- * @param repoRoot        absolute path of the target repo; every path stays inside it.
+ * @param roots           the primary repo root, or `{ primary, readAlso }` (T23): write inside
+ *                        primary only; read inside either. A bare string means primary only.
  * @param allowDestructive `--allow-destructive`: permits POST/PUT/PATCH/DELETE to non-local hosts.
  */
 export function makeCoreTools(
   profile: ToolProfile,
-  repoRoot: string,
+  roots: string | ToolRoots,
   allowDestructive = false,
 ): ToolSet {
-  const root = path.resolve(repoRoot);
+  const root = path.resolve(typeof roots === 'string' ? roots : roots.primary);
+  const readAlsoGiven = typeof roots === 'string' ? undefined : roots.readAlso?.trim();
+  const readAlsoResolved = readAlsoGiven ? path.resolve(readAlsoGiven) : undefined;
+  /** The second READABLE root, when it is a genuinely different directory. */
+  const readAlso = readAlsoResolved !== undefined && readAlsoResolved !== root
+    ? readAlsoResolved
+    : undefined;
+
+  /**
+   * Resolve `input` against the READ-ONLY second root, or throw.
+   *
+   * The path is taken as the PRIMARY would address it (`path.resolve(root, input)` — absolute
+   * inputs stay themselves), then symlink-resolved and required to land inside the resolved
+   * `readAlso`. No lexical pre-check against `readAlso` on purpose: the two legitimate ways in
+   * are the other repo's absolute path and a symlink that points into it, and both are only
+   * provable AFTER resolution. Containment still holds — the real location must be inside the
+   * real `readAlso` — and nothing here is ever writable.
+   */
+  const resolveInReadAlso = async (
+    input: string,
+  ): Promise<{ abs: string; rel: string; cwd: string }> => {
+    if (readAlso === undefined) throw new ToolError('no second root is configured');
+    const given = typeof input === 'string' ? input.trim() : '';
+    if (!given) throw new ToolError('path is required');
+    const lexical = path.resolve(root, given);
+    const realRoot = await realpathOrNearest(readAlso);
+    const realTarget = await realpathOrNearest(lexical);
+    const rel = path.relative(realRoot, realTarget);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new ToolError(`path escapes repoRoot: ${input} is outside ${readAlso}`);
+    }
+    return { abs: realTarget, rel: toPosix(rel), cwd: readAlso };
+  };
+
+  /**
+   * Resolve a path for READING: the primary root first, then `readAlso`.
+   * The returned `cwd` is the root the path resolved under — grep runs there.
+   */
+  const resolveForRead = async (
+    input: string,
+  ): Promise<{ abs: string; rel: string; cwd: string }> => {
+    try {
+      const resolved = await resolveInRepo(root, input);
+      return { ...resolved, cwd: root };
+    } catch (primaryErr) {
+      if (readAlso === undefined) throw primaryErr;
+      try {
+        return await resolveInReadAlso(input);
+      } catch {
+        throw new ToolError(
+          `path escapes repoRoot: ${input} is outside the writable repoRoot ${root} and the read-only root ${readAlso}`,
+        );
+      }
+    }
+  };
+
+  /**
+   * Resolve a path for WRITING: the primary root ONLY. A path that lands in `readAlso` gets its
+   * own message naming which root is writable (T23 § tool containment), because "outside the
+   * repo" would send the agent looking for a typo instead of telling it the rule.
+   */
+  const resolveForWrite = async (input: string): Promise<{ abs: string; rel: string }> => {
+    try {
+      return await resolveInRepo(root, input);
+    } catch (primaryErr) {
+      if (readAlso !== undefined) {
+        let landsInReadAlso = false;
+        try {
+          await resolveInReadAlso(input);
+          landsInReadAlso = true;
+        } catch {
+          landsInReadAlso = false;
+        }
+        if (landsInReadAlso) {
+          throw new ToolError(
+            `read-only root: ${input} is inside ${readAlso}, which this session may READ but not ` +
+              `write — the only writable root is ${root}`,
+          );
+        }
+      }
+      throw primaryErr;
+    }
+  };
+
+  /** Appended to read-tool descriptions so the model knows the second root exists. */
+  const readAlsoNote = readAlso === undefined
+    ? ''
+    : ` Files under ${readAlso} may also be READ via their absolute paths (that repo is read-only).`;
 
   const all: ToolSet = {
     read_file: tool({
       description:
         'Read a UTF-8 text file inside the repo and return it as numbered lines. ' +
-        'Optional 1-based `offset` and `limit` select a line window.',
+        'Optional 1-based `offset` and `limit` select a line window.' + readAlsoNote,
       inputSchema: z.object({
         path: z.string().describe('file path, relative to the repo root'),
         offset: z.number().int().min(1).optional().describe('first line to return (1-based)'),
@@ -390,7 +491,7 @@ export function makeCoreTools(
       }),
       execute: async ({ path: filePath, offset, limit }) =>
         guarded(async () => {
-          const { abs, rel } = await resolveInRepo(root, filePath);
+          const { abs, rel } = await resolveForRead(filePath);
           const stat = await fs.promises.stat(abs);
           if (stat.isDirectory()) throw new ToolError(`not a file (it is a directory): ${rel}`);
           if (stat.size > MAX_READ_BYTES) {
@@ -454,14 +555,16 @@ export function makeCoreTools(
 
     grep: tool({
       description:
-        'Recursive grep over the repo (binary files, node_modules and .git skipped). No match is not an error.',
+        'Recursive grep over the repo (binary files, node_modules and .git skipped). No match is not an error.' +
+        readAlsoNote,
       inputSchema: z.object({
         pattern: z.string().describe('basic-regex pattern passed to grep'),
         path: z.string().optional().describe('file or directory to search (default: whole repo)'),
       }),
       execute: async ({ pattern, path: target }) =>
         guarded(async () => {
-          const resolved = target ? (await resolveInRepo(root, target)).rel || '.' : '.';
+          const where = target ? await resolveForRead(target) : { rel: '.', cwd: root };
+          const resolved = where.rel || '.';
           const args = [
             '-rn',
             '-I',
@@ -475,7 +578,7 @@ export function makeCoreTools(
           ];
           try {
             const { stdout } = await execFileAsync('grep', args, {
-              cwd: root,
+              cwd: where.cwd,
               maxBuffer: EXEC_MAX_BUFFER,
             });
             return { pattern, path: resolved, matches: truncate(stdout) };
@@ -533,16 +636,17 @@ export function makeCoreTools(
 
     write_file: tool({
       description:
-        profile === 'tester'
+        (profile === 'tester'
           ? `Write a UTF-8 file. The qa-tester profile may only write under ${TESTER_WRITE_ROOT}/.`
-          : 'Write a UTF-8 file inside the repo, creating parent directories as needed.',
+          : 'Write a UTF-8 file inside the repo, creating parent directories as needed.') +
+        (readAlso === undefined ? '' : ` The repo at ${readAlso} is READ-ONLY — never write there.`),
       inputSchema: z.object({
         path: z.string().describe('file path, relative to the repo root'),
         content: z.string().describe('full file contents'),
       }),
       execute: async ({ path: filePath, content }) =>
         guarded(async () => {
-          const { abs, rel } = await resolveInRepo(root, filePath);
+          const { abs, rel } = await resolveForWrite(filePath);
           assertWritable(profile, rel);
           await fs.promises.mkdir(path.dirname(abs), { recursive: true });
           await fs.promises.writeFile(abs, content, 'utf8');
@@ -561,7 +665,7 @@ export function makeCoreTools(
       }),
       execute: async ({ path: filePath, old, new: replacement }) =>
         guarded(async () => {
-          const { abs, rel } = await resolveInRepo(root, filePath);
+          const { abs, rel } = await resolveForWrite(filePath);
           assertWritable(profile, rel);
           if (old === '') throw new ToolError(`edit_file: "old" must not be empty (${rel})`);
           const before = await fs.promises.readFile(abs, 'utf8');

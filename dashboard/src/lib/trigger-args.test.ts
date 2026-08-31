@@ -55,12 +55,38 @@ describe("review", () => {
   });
 
   it("omits every empty field rather than passing an empty argument", () => {
-    const built = buildTriggerArgv("review", { base: "", provider: "", model: "  " });
+    const built = buildTriggerArgv("review", { base: "", target: "", provider: "", model: "  " });
     expect(built).toEqual({ ok: true, argv: ["review"] });
   });
 
   it("accepts a missing args object entirely", () => {
     expect(buildTriggerArgv("review", {})).toEqual({ ok: true, argv: ["review"] });
+  });
+
+  it("passes the target through as a fixed enum (T23)", () => {
+    expect(buildTriggerArgv("review", { target: "frontend" })).toEqual({
+      ok: true,
+      argv: ["review", "--target", "frontend"],
+    });
+    expect(buildTriggerArgv("review", { target: "backend" })).toEqual({
+      ok: true,
+      argv: ["review", "--target", "backend"],
+    });
+  });
+
+  it("refuses a target outside the enum — never an arbitrary string", () => {
+    const built = buildTriggerArgv("review", { target: "prod; rm -rf ~" });
+    expect(built.ok).toBe(false);
+    if (!built.ok) {
+      expect(built.error.field).toBe("target");
+      expect(built.error.message).toContain("backend, frontend");
+    }
+    expect(buildTriggerArgv("review", { target: "Backend" }).ok).toBe(false);
+  });
+
+  it("no other kind accepts a target", () => {
+    expect(buildTriggerArgv("design-loop", { feature: "x", target: "frontend" } as never).ok).toBe(false);
+    expect(buildTriggerArgv("test-feature", { desc: "x", target: "backend" } as never).ok).toBe(false);
   });
 });
 

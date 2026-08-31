@@ -18,6 +18,10 @@ export function registerReview(program: Command): void {
     .command('review')
     .description('Review the diff between a base ref and HEAD with the code-reviewer agent')
     .option('-b, --base <ref>', 'base ref to diff against', 'main')
+    .option(
+      '-t, --target <target>',
+      'which repo the diff belongs to: backend or frontend (default: backend if present, else frontend)',
+    )
     .option('-p, --provider <p>', 'provider id (default: config agents.code-reviewer, else defaults)')
     .option('-m, --model <m>', 'model id (default: config agents.code-reviewer, else defaults)')
     .option('-c, --config <path>', 'path to aw.config.json (default: ./aw.config.json)')
@@ -25,6 +29,7 @@ export function registerReview(program: Command): void {
     .action(
       async (opts: {
         base: string;
+        target?: string;
         provider?: string;
         model?: string;
         config?: string;

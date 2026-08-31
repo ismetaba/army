@@ -8,8 +8,11 @@
  * The config is read defensively rather than through `AwConfig.parse()`. A workspace whose config
  * is half-written or hand-edited into something the schema rejects must still render its ledger —
  * the screen degrades to "no backend configured" and an unknown provider, which is the truth,
- * instead of throwing a 500 over a field the ledger does not depend on.
+ * instead of throwing a 500 over a field the ledger does not depend on. It IS run through
+ * `migrateConfig` first (a pure structural mapping, safe on garbage), so a pre-T23 config reads
+ * the same as a target-shaped one.
  */
+import { migrateConfig } from "@shared/schemas";
 import { readConfigFile } from "@/lib/store";
 
 export interface WorkspaceFacts {
@@ -19,6 +22,11 @@ export interface WorkspaceFacts {
   /** `null` when no backend is configured at all — which is not the same claim as "it is down". */
   backendUrl: string | null;
   backendPort: number | null;
+  /** T23: which target sets the config declares — drives the review TARGET control. */
+  hasBackend: boolean;
+  hasFrontend: boolean;
+  backendRepo: string | null;
+  frontendRepo: string | null;
 }
 
 function obj(value: unknown): Record<string, unknown> | null {
@@ -29,30 +37,41 @@ function obj(value: unknown): Record<string, unknown> | null {
 
 const str = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
 
+const EMPTY: WorkspaceFacts = {
+  provider: null,
+  model: null,
+  backendUrl: null,
+  backendPort: null,
+  hasBackend: false,
+  hasFrontend: false,
+  backendRepo: null,
+  frontendRepo: null,
+};
+
 export function workspaceFacts(ws: string): WorkspaceFacts {
   const read = readConfigFile(ws);
-  const empty: WorkspaceFacts = { provider: null, model: null, backendUrl: null, backendPort: null };
-  if (!read.ok) return empty;
+  if (!read.ok) return EMPTY;
 
-  const defaults = obj(read.data.defaults);
-  const app = obj(read.data.app);
-  const backend = app === null ? null : obj(app.backend);
+  const config = obj(migrateConfig(read.data)) ?? read.data;
+  const defaults = obj(config.defaults);
+  const backend = obj(config.backend);
+  const frontend = obj(config.frontend);
   const port =
     backend !== null && typeof backend.port === "number" && Number.isFinite(backend.port)
       ? backend.port
       : null;
-  const baseUrl = app === null ? null : str(app.baseUrl);
+  const baseUrl = backend === null ? null : str(backend.url);
 
   /*
    * `healthPath` is a PATH. It is resolved against the origin below, and `new URL()` lets an
    * absolute value replace that origin outright — so an `aw.config.json` naming
    * `http://elsewhere/probe` here would send the ledger's render-time GET to `elsewhere`,
-   * silently overriding the `baseUrl` the user set in Settings. Anything that is not a
-   * slash-rooted path falls back to the default rather than being obeyed.
+   * silently overriding the URL the user set in Settings. Anything that is not a slash-rooted
+   * path falls back to the default rather than being obeyed.
    *
-   * `baseUrl` itself is deliberately NOT restricted: it is the address of the user's own backend
-   * and a staging deployment is a legitimate answer (handoff § 05 lists both). This only stops one
-   * field from quietly overruling another.
+   * `backend.url` itself is deliberately NOT restricted: it is the address of the user's own
+   * backend and a staging deployment is a legitimate answer (handoff § 05 lists both). This only
+   * stops one field from quietly overruling another.
    */
   const declared = backend === null ? null : str(backend.healthPath);
   const healthPath = declared !== null && /^\/(?!\/)/.test(declared) ? declared : "/health";
@@ -72,6 +91,10 @@ export function workspaceFacts(ws: string): WorkspaceFacts {
     model: defaults === null ? null : str(defaults.model),
     backendUrl,
     backendPort: port ?? (backendUrl === null ? null : portOf(backendUrl)),
+    hasBackend: backend !== null,
+    hasFrontend: frontend !== null,
+    backendRepo: backend === null ? null : str(backend.repoRoot),
+    frontendRepo: frontend === null ? null : str(frontend.repoRoot),
   };
 }
 

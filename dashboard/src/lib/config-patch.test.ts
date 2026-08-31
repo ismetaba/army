@@ -113,14 +113,16 @@ describe("findSecretKeys", () => {
 
 describe("ConfigPatch", () => {
   it("rejects a password field even though the form could never send one", () => {
-    const parsed = ConfigPatch.safeParse({ app: { testAccount: { user: "a", passEnv: "P", password: "x" } } });
+    const parsed = ConfigPatch.safeParse({ testAccount: { user: "a", passEnv: "P", password: "x" } });
     expect(parsed.success).toBe(false);
   });
 
-  it("rejects keys it does not own, including the workspace identity", () => {
+  it("rejects keys it does not own, including the workspace identity and the legacy app block", () => {
     expect(ConfigPatch.safeParse({ repoRoot: "/elsewhere" }).success).toBe(false);
     expect(ConfigPatch.safeParse({ workspace: "other" }).success).toBe(false);
     expect(ConfigPatch.safeParse({ agents: { reviewer: null } }).success).toBe(false);
+    // T23: the flat `app` block is a READ-side legacy shape; the form writes targets.
+    expect(ConfigPatch.safeParse({ app: { baseUrl: "http://x" } }).success).toBe(false);
   });
 
   it("accepts the shape the form sends, nulls and raw strings included", () => {
@@ -129,7 +131,10 @@ describe("ConfigPatch", () => {
       patch: {
         defaults: { provider: "lmstudio", model: "m" },
         agents: { "code-reviewer": { provider: "anthropic", model: "claude-sonnet-5" }, "qa-tester": null },
-        app: { backend: { start: "s", port: "eighty", healthPath: null }, frontend: null },
+        backend: { repoRoot: "/tmp/api", start: "s", port: "eighty", url: null, healthPath: null },
+        frontend: null,
+        testAccount: null,
+        stagingUrl: null,
         viewports: { mobile: { width: 375, height: 812 }, desktop: { width: 1440, height: 900 } },
         offLimits: null,
       },
@@ -138,9 +143,30 @@ describe("ConfigPatch", () => {
   });
 });
 
+/** The same fixture in the T23 target shape — what `configRuleIssues` reads after migration. */
+const targetBase = {
+  workspace: "fixture",
+  backend: { repoRoot: "/tmp/fixture", start: "npm run dev:api", port: 3001, healthPath: "/health" },
+  frontend: { repoRoot: "/tmp/fixture-ui", start: "npm run dev", port: 5173 },
+  defaults: { provider: "lmstudio", model: "qwen3" },
+  viewports: { mobile: { width: 375, height: 812 }, desktop: { width: 1440, height: 900 } },
+} as const;
+
 describe("configRuleIssues", () => {
   it("passes a config the CLI can run", () => {
     expect(configRuleIssues(base)).toEqual([]);
+    expect(configRuleIssues(targetBase)).toEqual([]);
+  });
+
+  it("requires each declared target to name an absolute repo folder (T23)", () => {
+    const missing = configRuleIssues({ ...targetBase, backend: { start: "x", port: 3001 } });
+    expect(missing).toEqual([
+      { path: "backend.repoRoot", message: expect.stringContaining("needs its repo folder") },
+    ]);
+    const relative = configRuleIssues({ ...targetBase, frontend: { repoRoot: "ui", port: 5173 } });
+    expect(relative).toEqual([
+      { path: "frontend.repoRoot", message: expect.stringContaining("absolute path") },
+    ]);
   });
 
   it("requires a default model", () => {
@@ -183,14 +209,18 @@ describe("configRuleIssues", () => {
 
   it("rejects a port that is not a whole number in range, however it was typed", () => {
     const issues = configRuleIssues({
-      ...base,
-      app: { ...base.app, backend: { start: "x", port: "eighty" } },
+      ...targetBase,
+      backend: { repoRoot: "/tmp/fixture", start: "x", port: "eighty" },
     });
     expect(issues).toEqual([
-      { path: "app.backend.port", message: expect.stringContaining("whole number between 1 and 65535") },
+      { path: "backend.port", message: expect.stringContaining("whole number between 1 and 65535") },
     ]);
-    expect(configRuleIssues({ ...base, app: { ...base.app, frontend: { start: "x", port: 0 } } })).toHaveLength(1);
-    expect(configRuleIssues({ ...base, app: { ...base.app, frontend: { start: "x", port: 70000 } } })).toHaveLength(1);
+    expect(
+      configRuleIssues({ ...targetBase, frontend: { repoRoot: "/tmp/fixture-ui", port: 0 } }),
+    ).toHaveLength(1);
+    expect(
+      configRuleIssues({ ...targetBase, frontend: { repoRoot: "/tmp/fixture-ui", port: 70000 } }),
+    ).toHaveLength(1);
   });
 
   it("rejects viewport dimensions that are not whole numbers", () => {
@@ -203,14 +233,14 @@ describe("configRuleIssues", () => {
 
   it("insists that passEnv is an environment variable NAME", () => {
     const issues = configRuleIssues({
-      ...base,
-      app: { ...base.app, testAccount: { user: "a@b.c", passEnv: "hunter2!" } },
+      ...targetBase,
+      testAccount: { user: "a@b.c", passEnv: "hunter2!" },
     });
     expect(issues).toEqual([
-      { path: "app.testAccount.passEnv", message: expect.stringContaining("never the password itself") },
+      { path: "testAccount.passEnv", message: expect.stringContaining("never the password itself") },
     ]);
     expect(
-      configRuleIssues({ ...base, app: { ...base.app, testAccount: { user: "a@b.c", passEnv: "AW_TEST_PASSWORD" } } }),
+      configRuleIssues({ ...targetBase, testAccount: { user: "a@b.c", passEnv: "AW_TEST_PASSWORD" } }),
     ).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { z } from 'zod';
-import { AgentName, AwConfig, ProviderId, WorkspacesFile } from '../shared/schemas';
+import { AgentName, AwConfig, ProviderId, WorkspacesFile, parseAwConfig } from '../shared/schemas';
 import { awHome } from './util';
 
 /** Thrown for user-facing configuration mistakes. Callers print `.message`, not a stack. */
@@ -69,11 +69,14 @@ export function resolveConfigPath(opts: { config?: string; workspace?: string } 
 /**
  * Load and validate an `aw.config.json`.
  * On any problem: readable message on stderr + `process.exit(1)`. Never throws a raw stack.
+ *
+ * Goes through `parseAwConfig`, so a pre-T23 config (`repoRoot` + flat `app`) is migrated to
+ * the backend/frontend target shape in memory — the file on disk is never rewritten here.
  */
 export function loadConfig(opts: { config?: string; workspace?: string } = {}): AwConfig {
   const configPath = resolveConfigPath(opts);
   const raw = readJsonFile(configPath, 'config');
-  const parsed = AwConfig.safeParse(raw);
+  const parsed = parseAwConfig(raw);
   if (!parsed.success) {
     fail(`invalid config: ${configPath}\n${formatIssues(parsed.error)}`);
   }

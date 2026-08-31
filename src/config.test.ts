@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { AwConfig } from '../shared/schemas';
+import { AwConfig, migrateConfig, parseAwConfig, targetUrl } from '../shared/schemas';
 import { ConfigError, resolveModel } from './config';
 
 /** Minimal valid config; `agents` filled in per test. Built inline — no fs. */
 function cfg(agents?: AwConfig['agents']): AwConfig {
   return AwConfig.parse({
     workspace: 'test-ws',
-    repoRoot: '/tmp/target-repo',
+    backend: { repoRoot: '/tmp/target-repo' },
     defaults: { provider: 'lmstudio', model: 'qwen3-30b-a3b' },
     ...(agents ? { agents } : {}),
   });
@@ -167,7 +167,7 @@ describe('aw.config.example.json', () => {
   it('applies the viewports default when the key is omitted', () => {
     const parsed = AwConfig.parse({
       workspace: 'w',
-      repoRoot: '/tmp/r',
+      backend: { repoRoot: '/tmp/r' },
       defaults: { provider: 'lmstudio', model: 'm' },
     });
     expect(parsed.viewports).toEqual({
@@ -181,8 +181,141 @@ describe('aw.config.example.json', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       const paths = result.error.issues.map((i) => i.path.join('.'));
-      expect(paths).toContain('repoRoot');
       expect(paths).toContain('defaults.provider');
     }
+    // The missing-target refinement runs once the shape itself is fine.
+    const noTarget = AwConfig.safeParse({ workspace: 'w', defaults: { provider: 'lmstudio', model: 'm' } });
+    expect(noTarget.success).toBe(false);
+    if (!noTarget.success) {
+      expect(noTarget.error.issues.map((i) => i.path.join('.'))).toContain('backend');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T23 — legacy-config migration
+// ---------------------------------------------------------------------------
+
+describe('migrateConfig / parseAwConfig (T23)', () => {
+  const DEFAULTS = { defaults: { provider: 'lmstudio', model: 'm' } };
+
+  it('maps repoRoot + app.backend + app.frontend + baseUrl onto the two targets', () => {
+    const parsed = parseAwConfig({
+      workspace: 'fixture',
+      repoRoot: '/repo',
+      ...DEFAULTS,
+      app: {
+        backend: { start: 'npm run dev:api', port: 3001, healthPath: '/health' },
+        frontend: { start: 'npm run dev', port: 5173 },
+        baseUrl: 'http://localhost:3001',
+      },
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.backend).toEqual({
+      repoRoot: '/repo',
+      start: 'npm run dev:api',
+      port: 3001,
+      healthPath: '/health',
+      url: 'http://localhost:3001',
+    });
+    expect(parsed.data.frontend).toEqual({ repoRoot: '/repo', start: 'npm run dev', port: 5173 });
+    expect(parsed.data.repoRoot).toBe('/repo');
+  });
+
+  it('a bare repoRoot (no app) becomes a review-only backend', () => {
+    const parsed = parseAwConfig({ workspace: 'w', repoRoot: '/repo', ...DEFAULTS });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.backend).toEqual({ repoRoot: '/repo' });
+    expect(parsed.data.frontend).toBeUndefined();
+  });
+
+  it('repoRoot + app.frontend only stays a frontend-only workspace', () => {
+    const parsed = parseAwConfig({
+      workspace: 'ui',
+      repoRoot: '/ui-repo',
+      ...DEFAULTS,
+      app: { frontend: { start: 'npm start', port: 4200 } },
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.backend).toBeUndefined();
+    expect(parsed.data.frontend).toEqual({ repoRoot: '/ui-repo', start: 'npm start', port: 4200 });
+    expect(parsed.data.repoRoot).toBe('/ui-repo');
+  });
+
+  it('moves app.testAccount and app.stagingUrl to the top level', () => {
+    const parsed = parseAwConfig({
+      workspace: 'w',
+      repoRoot: '/repo',
+      ...DEFAULTS,
+      app: {
+        testAccount: { user: 'qa@example.com', passEnv: 'AW_TEST_PASSWORD' },
+        stagingUrl: 'https://staging.example.com',
+      },
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.testAccount).toEqual({ user: 'qa@example.com', passEnv: 'AW_TEST_PASSWORD' });
+    expect(parsed.data.stagingUrl).toBe('https://staging.example.com');
+    // testAccount/stagingUrl alone are not a target; the bare repoRoot still becomes one.
+    expect(parsed.data.backend).toEqual({ repoRoot: '/repo' });
+  });
+
+  it('new-shape keys win over what the legacy keys would produce', () => {
+    const parsed = parseAwConfig({
+      workspace: 'w',
+      repoRoot: '/old',
+      backend: { repoRoot: '/new-backend', port: 8080 },
+      ...DEFAULTS,
+      app: { backend: { start: 'old', port: 1 } },
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.backend).toEqual({ repoRoot: '/new-backend', port: 8080 });
+    expect(parsed.data.repoRoot).toBe('/new-backend');
+  });
+
+  it('a config with no target at all fails loudly', () => {
+    const parsed = parseAwConfig({ workspace: 'w', ...DEFAULTS });
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    expect(parsed.error.issues.map((i) => i.path.join('.'))).toContain('backend');
+  });
+
+  it('hands back the SAME reference when there is nothing legacy to migrate', () => {
+    const modern = {
+      workspace: 'w',
+      backend: { repoRoot: '/b' },
+      frontend: { repoRoot: '/f', port: 4200 },
+      ...DEFAULTS,
+    };
+    expect(migrateConfig(modern)).toBe(modern);
+  });
+
+  it('derives repoRoot as backend ?? frontend', () => {
+    const both = parseAwConfig({
+      workspace: 'w',
+      backend: { repoRoot: '/b' },
+      frontend: { repoRoot: '/f' },
+      ...DEFAULTS,
+    });
+    expect(both.success && both.data.repoRoot).toBe('/b');
+    const frontendOnly = parseAwConfig({
+      workspace: 'w',
+      frontend: { repoRoot: '/f' },
+      ...DEFAULTS,
+    });
+    expect(frontendOnly.success && frontendOnly.data.repoRoot).toBe('/f');
+  });
+});
+
+describe('targetUrl (T23)', () => {
+  it('prefers the explicit url, then derives from the port, else undefined', () => {
+    expect(targetUrl({ repoRoot: '/r', url: 'http://api.local:9', port: 3001 })).toBe('http://api.local:9');
+    expect(targetUrl({ repoRoot: '/r', port: 4200 })).toBe('http://localhost:4200');
+    expect(targetUrl({ repoRoot: '/r' })).toBeUndefined();
+    expect(targetUrl(undefined)).toBeUndefined();
   });
 });
