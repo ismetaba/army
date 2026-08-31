@@ -128,7 +128,15 @@ export function LiveLog({
       setText(buffer.current);
     };
 
-    es.addEventListener("open", () => setPhase((p) => (p === "connecting" ? "streaming" : p)));
+    es.addEventListener("open", () => {
+      // Every connection is primed with the file's tail from the server — including the
+      // connections `EventSource` reopens BY ITSELF after a dropped one (laptop sleep, dev-server
+      // restart). Starting each connection from an empty buffer is what keeps that self-heal from
+      // appending a second copy of the log onto the first.
+      buffer.current = "";
+      setText("");
+      setPhase((p) => (p === "connecting" ? "streaming" : p));
+    });
     es.addEventListener("log", (event) => {
       const data = parse(event);
       if (typeof data?.text === "string") append(data.text);

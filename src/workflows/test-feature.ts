@@ -1414,7 +1414,17 @@ async function testFeatureSession(ctx: {
     const evidence: string[] = [];
     let result: Awaited<ReturnType<typeof generateText>>;
     try {
-      const session = sessionModel(provider, model, { tools, cwd: repoRoot, maxSteps: MAX_STEPS });
+      // The tool-less retry must be tool-less on EVERY provider: `withTools` gates what
+      // `generateText` receives for the API providers below, and this is the same gate for
+      // claude-cli, where the toolset travels inside the model. Without it the "reformat only"
+      // retry was bridged the full toolset and a 40-turn budget — free to re-run the whole test
+      // session and invent evidence the log never proved (design-loop passes `withTools ?? {}`
+      // for the same reason).
+      const session = sessionModel(provider, model, {
+        tools: withTools ? tools : {},
+        cwd: repoRoot,
+        maxSteps: withTools ? MAX_STEPS : 1,
+      });
       result = await generateText({
         model: session.model,
         system: agent.system,

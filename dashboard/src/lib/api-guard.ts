@@ -169,10 +169,43 @@ export function guardMutation(request: Request, expectJson = true): Response | n
   return null;
 }
 
-/** Parse a JSON body without ever throwing. `undefined` means "not JSON". */
-export async function readJsonBody(request: Request): Promise<unknown> {
+/**
+ * The largest body any panel route will materialise. Every real body here is a small JSON object
+ * (a note, a config patch, two run ids); a route that needs a tighter bound passes its own.
+ */
+const MAX_JSON_BODY_BYTES = 64 * 1024;
+
+/**
+ * Parse a JSON body without ever throwing. `undefined` means "not JSON" — including a body larger
+ * than `maxBytes`.
+ *
+ * Bounded on the BYTES AS THEY ARRIVE, not on `content-length`: a chunked request declares no
+ * length at all, and Route Handlers have no default body limit, so `request.json()` would happily
+ * buffer a multi-gigabyte body before any field check ran. (No `node:` imports — `middleware`/
+ * proxy code shares this module.)
+ */
+export async function readJsonBody(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES,
+): Promise<unknown> {
   try {
-    return (await request.json()) as unknown;
+    const reader = request.body?.getReader();
+    if (reader === undefined) return undefined;
+    const decoder = new TextDecoder();
+    let text = "";
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > maxBytes) {
+        await reader.cancel();
+        return undefined;
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return JSON.parse(text) as unknown;
   } catch {
     return undefined;
   }

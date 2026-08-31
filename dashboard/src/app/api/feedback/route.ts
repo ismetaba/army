@@ -152,12 +152,10 @@ function writeQueue(realDir: string, entries: FeedbackEntry[]): boolean {
 }
 
 /**
- * The largest body this route will parse.
- *
- * The cap on the NOTE is 2000 characters, but it is applied after `request.json()` has already
- * materialised the whole body — a 10 MB POST was read into memory in full and then rejected. Route
- * Handlers have no default body limit, so this is the only thing bounding it. A few kB is generous
- * for a 2000-character note plus two run ids.
+ * The largest body this route will parse. A few kB is generous for a 2000-character note plus two
+ * run ids. Enforced twice: `tooLarge` answers an honest `content-length` with a 413 before the
+ * body is read at all, and `readJsonBody(request, MAX_BODY_BYTES)` bounds the actual bytes — a
+ * chunked request declares no length, and only the streaming bound catches it.
  */
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -177,7 +175,7 @@ export async function POST(request: Request): Promise<Response> {
     const oversize = tooLarge(request);
     if (oversize !== null) return oversize;
 
-    const body = await readJsonBody(request);
+    const body = await readJsonBody(request, MAX_BODY_BYTES);
     if (body === undefined) return fail("body is not valid JSON", 400);
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
       return fail("body must be a JSON object", 400);
@@ -249,7 +247,7 @@ export async function DELETE(request: Request): Promise<Response> {
     const oversize = tooLarge(request);
     if (oversize !== null) return oversize;
 
-    const body = await readJsonBody(request);
+    const body = await readJsonBody(request, MAX_BODY_BYTES);
     if (body === undefined) return fail("body is not valid JSON", 400);
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
       return fail("body must be a JSON object", 400);

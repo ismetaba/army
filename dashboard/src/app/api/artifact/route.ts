@@ -9,11 +9,14 @@ import { resolveArtifact } from "@/lib/store";
  * This is the only endpoint that turns a URL into a filesystem read, so it is written to be
  * boring in exactly two ways:
  *
- * 1. **It answers 404 or it answers the file. Never 500.** Every failure — a bad workspace name,
- *    a traversal attempt, a missing file, a dangling symlink, a read error mid-stream — takes the
- *    same `notFound()` exit. A stack trace in the response would hand an attacker the absolute
- *    path of the store, and a 500 would tell them the difference between "rejected" and "does not
- *    exist"; a uniform 404 tells them nothing.
+ * 1. **It answers 404 or it answers the file. Never 500.** Every failure up to the point the
+ *    stream is handed to the Response — a bad workspace name, a traversal attempt, a missing
+ *    file, a dangling symlink — takes the same `notFound()` exit. A stack trace in the response
+ *    would hand an attacker the absolute path of the store, and a 500 would tell them the
+ *    difference between "rejected" and "does not exist"; a uniform 404 tells them nothing.
+ *    A read error AFTER streaming has begun is the one failure HTTP cannot re-status: the client
+ *    sees an aborted 200/206 body (a short read against the declared `content-length`), which a
+ *    browser treats as a failed transfer — still no stack, still no path.
  * 2. **Path confinement lives in one function.** `resolveArtifact` (src/lib/store.ts) does the
  *    segment validation, the `..` scan, the lexical containment check and the post-`realpath`
  *    re-check. Note that `URLSearchParams` has already percent-decoded the value by the time it
@@ -88,12 +91,15 @@ export async function GET(request: Request): Promise<Response> {
     // needs byte ranges to seek, so a single `bytes=` range is answered with a 206 over a
     // positioned stream; `accept-ranges` on the 200 is what tells the player it may ask.
     const range = parseRange(request.headers.get("range"), artifact.size);
-    const stream = Readable.toWeb(
-      fs.createReadStream(
-        artifact.absPath,
-        range === null ? undefined : { start: range.start, end: range.end },
-      ),
-    ) as unknown as ReadableStream<Uint8Array>;
+    const file = fs.createReadStream(
+      artifact.absPath,
+      range === null ? undefined : { start: range.start, end: range.end },
+    );
+    // `toWeb` propagates errors into the web stream; this listener is the belt to that brace, so
+    // a file truncated mid-transfer can never surface as an unhandled 'error' event. The response
+    // itself is already on the wire by then — see the header comment.
+    file.on("error", () => file.destroy());
+    const stream = Readable.toWeb(file) as unknown as ReadableStream<Uint8Array>;
 
     return new Response(stream, {
       status: range === null ? 200 : 206,

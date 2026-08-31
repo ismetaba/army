@@ -198,6 +198,17 @@ export function LiveRunProvider({
   const streamKey =
     run === null ? null : run.pid !== null ? `pid=${run.pid}` : run.runId !== null ? `run=${encodeURIComponent(run.runId)}` : null;
 
+  // A new stream target must not paint over the previous run's last lines and progress: without
+  // this, run B briefly shows run A's tail, a full bar and A's tool count until its first chunk.
+  // Adjusted during RENDER (the pattern react.dev names for state derived from a changed prop)
+  // rather than in the effect, whose synchronous setState the lint rule rejects as a cascade.
+  const [prevStreamKey, setPrevStreamKey] = useState(streamKey);
+  if (prevStreamKey !== streamKey) {
+    setPrevStreamKey(streamKey);
+    setLines([]);
+    setProgress(NO_PROGRESS);
+  }
+
   useEffect(() => {
     if (streamKey === null) return;
 
@@ -206,7 +217,7 @@ export function LiveRunProvider({
     // line of its own, which would double-count a `[tool]` marker split across two frames.
     let carry = "";
     let folded = NO_PROGRESS;
-    const tail: LogLine[] = [];
+    let tail: LogLine[] = [];
 
     const consume = (text: string) => {
       const parts = (carry + text).split("\n");
@@ -224,6 +235,17 @@ export function LiveRunProvider({
       setProgress(folded);
     };
 
+    source.addEventListener("open", () => {
+      // The server primes every connection with the file's tail — including the ones EventSource
+      // reopens by itself after a drop. Folding that re-primed tail onto what already streamed
+      // would double the tool count and replay old lines, so each connection starts from zero
+      // (same rule as `live-log.tsx`).
+      carry = "";
+      folded = NO_PROGRESS;
+      tail = [];
+      setLines([]);
+      setProgress(NO_PROGRESS);
+    });
     source.addEventListener("log", (event) => {
       const data = parse(event);
       if (typeof data?.text === "string") consume(data.text);

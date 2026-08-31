@@ -343,7 +343,9 @@ function Cell({
             {shot === null ? "not captured" : "file missing"}
           </span>
           {shot !== null ? (
-            <span className="mono max-w-full text-[9px] break-all text-muted">{shot.path}</span>
+            <span className="mono max-w-full text-[9px] break-all text-muted">
+              {machineText(shot.path)}
+            </span>
           ) : null}
         </div>
       </figure>
